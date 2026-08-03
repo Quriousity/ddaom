@@ -40,9 +40,17 @@ class _Worker(QRunnable):
     @Slot()
     def run(self):
         try:
-            self.signals.done.emit(self.fn(*self.args, **self.kwargs))
+            result = self.fn(*self.args, **self.kwargs)
         except Exception:
-            self.signals.error.emit(traceback.format_exc())
+            try:
+                self.signals.error.emit(traceback.format_exc())
+            except RuntimeError:
+                pass  # 앱 종료 중 — 시그널 대상이 이미 파괴됨
+            return
+        try:
+            self.signals.done.emit(result)
+        except RuntimeError:
+            pass  # 앱 종료 중
 
 
 def _next_image_path(doc_path: str, page_no: int) -> str:
