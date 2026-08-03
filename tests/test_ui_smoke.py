@@ -180,3 +180,26 @@ class TestTextBoxes:
         win.sw_boxes.toggle()   # on
         qapp.processEvents()
         assert win.view.boxes_visible
+
+
+class TestPan:
+    def test_right_drag_pans(self, win, qapp):
+        from PySide6.QtCore import QEvent, QPointF
+        from PySide6.QtCore import Qt as _Qt
+        from PySide6.QtGui import QMouseEvent
+        win.open_file(os.path.join(OUT, "text.pdf"))
+        qapp.processEvents()
+        win.view.set_zoom(3.0)   # 스크롤 가능한 상태로
+        qapp.processEvents()
+        v0 = win.view.verticalScrollBar().value()
+        press = QMouseEvent(QEvent.MouseButtonPress, QPointF(200, 200),
+                            _Qt.RightButton, _Qt.RightButton, _Qt.NoModifier)
+        move = QMouseEvent(QEvent.MouseMove, QPointF(200, 120),
+                           _Qt.NoButton, _Qt.RightButton, _Qt.NoModifier)
+        release = QMouseEvent(QEvent.MouseButtonRelease, QPointF(200, 120),
+                              _Qt.RightButton, _Qt.RightButton, _Qt.NoModifier)
+        win.view.mousePressEvent(press)
+        win.view.mouseMoveEvent(move)
+        win.view.mouseReleaseEvent(release)
+        assert win.view.verticalScrollBar().value() == v0 + 80  # 위로 80px 끌었다
+        assert win.view.selection is None  # 팬은 선택을 만들지 않는다

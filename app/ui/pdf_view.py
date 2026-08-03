@@ -65,6 +65,8 @@ class PdfView(QGraphicsView):
         self._dragging = False
         self._drag_start = QPointF()
         self._space_pan = False
+        self._mouse_pan = False          # 우클릭/휠클릭 드래그 팬
+        self._pan_last = QPointF()
 
     # ---------- 문서/페이지 ----------
 
@@ -182,6 +184,13 @@ class PdfView(QGraphicsView):
     def mousePressEvent(self, ev):
         if not self.doc or self._space_pan:
             return super().mousePressEvent(ev)
+        if ev.button() in (Qt.RightButton, Qt.MiddleButton):
+            # 모드 없는 팬 — 우클릭/휠클릭 드래그로 문서를 잡고 이동
+            self._mouse_pan = True
+            self._pan_last = ev.position()
+            self.setCursor(Qt.ClosedHandCursor)
+            ev.accept()
+            return
         if ev.button() == Qt.LeftButton:
             self._dragging = True
             self._drag_start = self.mapToScene(ev.position().toPoint())
@@ -191,6 +200,14 @@ class PdfView(QGraphicsView):
         super().mousePressEvent(ev)
 
     def mouseMoveEvent(self, ev):
+        if self._mouse_pan:
+            d = ev.position() - self._pan_last
+            self._pan_last = ev.position()
+            h, v = self.horizontalScrollBar(), self.verticalScrollBar()
+            h.setValue(h.value() - int(d.x()))
+            v.setValue(v.value() - int(d.y()))
+            ev.accept()
+            return
         if self._dragging:
             sp = self.mapToScene(ev.position().toPoint())
             self._update_rect_preview(self._drag_start, sp)
@@ -199,6 +216,11 @@ class PdfView(QGraphicsView):
         super().mouseMoveEvent(ev)
 
     def mouseReleaseEvent(self, ev):
+        if self._mouse_pan and ev.button() in (Qt.RightButton, Qt.MiddleButton):
+            self._mouse_pan = False
+            self.unsetCursor()
+            ev.accept()
+            return
         if self._dragging and ev.button() == Qt.LeftButton:
             self._dragging = False
             sp = self.mapToScene(ev.position().toPoint())
@@ -252,6 +274,9 @@ class PdfView(QGraphicsView):
             ev.accept()
             return
         super().keyReleaseEvent(ev)
+
+    def contextMenuEvent(self, ev):
+        ev.accept()  # 우클릭은 팬 전용 — 컨텍스트 메뉴 없음
 
     # ---------- 선택 프리뷰 ----------
 

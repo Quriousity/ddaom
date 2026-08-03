@@ -193,7 +193,7 @@ class MainWindow(QMainWindow):
     def _make_statusbar(self):
         self.lbl_page = QLabel("- / -")
         self.lbl_zoom = QLabel("100%")
-        self.lbl_sel = QLabel("영역을 드래그하거나, 텍스트 상자를 클릭해 복사")
+        self.lbl_sel = QLabel("드래그=영역 지정 · 클릭=글자 복사 · 우클릭 드래그=이동")
         self.lbl_ocr = QLabel("OCR: -")
         for w in (self.lbl_page, self.lbl_zoom, self.lbl_sel, self.lbl_ocr):
             self.statusBar().addPermanentWidget(w)
@@ -380,7 +380,7 @@ class MainWindow(QMainWindow):
     def _on_selection_changed(self, sel):
         self._update_action_enabled(sel)
         if sel is None:
-            self.lbl_sel.setText("영역을 드래그하거나, 텍스트 상자를 클릭해 복사")
+            self.lbl_sel.setText("드래그=영역 지정 · 클릭=글자 복사 · 우클릭 드래그=이동")
         else:
             b = sel.bbox()
             self.lbl_sel.setText(f"선택 {b.width:.0f}×{b.height:.0f}pt — "
