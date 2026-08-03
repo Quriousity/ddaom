@@ -11,11 +11,11 @@ from __future__ import annotations
 import os
 import traceback
 
-from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal, Slot
+from PySide6.QtCore import QObject, QRunnable, QSize, QThreadPool, Signal, Slot
 from PySide6.QtGui import QAction, QIcon, QImage, QKeySequence, QPixmap
 from PySide6.QtWidgets import (QFileDialog, QHBoxLayout, QInputDialog, QLabel,
                                QListWidget, QListWidgetItem, QMainWindow,
-                               QMessageBox, QSplitter, QToolBar, QWidget)
+                               QMessageBox, QToolBar, QWidget)
 
 from .. import config
 from ..core import clipboard, extractor, redactor
@@ -57,16 +57,37 @@ class MainWindow(QMainWindow):
         self._workers: set[_Worker] = set()
 
         self.view = PdfView(self)
+        # 문서 영역과 같은 톤 — 색 단차 제거
+        self.view.setBackgroundBrush(self.palette().window())
+        self.view.setFrameShape(QListWidget.Shape.NoFrame)
+
+        # 썸네일: 중앙정렬 + 페이지번호는 썸네일 아래 (IconMode 그리드)
         self.thumbs = QListWidget()
-        self.thumbs.setFixedWidth(config.THUMB_WIDTH + 40)
-        self.thumbs.setIconSize(QPixmap(config.THUMB_WIDTH, config.THUMB_WIDTH).size())
+        sidebar_w = config.THUMB_WIDTH + 44
+        self.thumbs.setFixedWidth(sidebar_w)
+        self.thumbs.setViewMode(QListWidget.ViewMode.IconMode)
+        self.thumbs.setMovement(QListWidget.Movement.Static)
+        self.thumbs.setResizeMode(QListWidget.ResizeMode.Adjust)
+        self.thumbs.setIconSize(QSize(config.THUMB_WIDTH, int(config.THUMB_WIDTH * 1.45)))
+        self.thumbs.setGridSize(QSize(sidebar_w - 20, int(config.THUMB_WIDTH * 1.45) + 34))
+        self.thumbs.setFrameShape(QListWidget.Shape.NoFrame)
+        # 선택 = 테두리 강조선만 (썸네일을 덮지 않는다), 경계는 1px 헤어라인
+        self.thumbs.setStyleSheet(
+            "QListWidget { background: transparent; outline: none;"
+            "  border-right: 1px solid rgba(128,128,128,70); }"
+            "QListWidget::item { background: transparent; border: 2px solid transparent;"
+            "  margin: 4px; }"
+            "QListWidget::item:selected { background: transparent;"
+            "  border: 2px solid palette(highlight); border-radius: 3px; }")
         self.thumbs.currentRowChanged.connect(self._on_thumb_clicked)
 
-        split = QSplitter()
-        split.addWidget(self.thumbs)
-        split.addWidget(self.view)
-        split.setStretchFactor(1, 1)
-        self.setCentralWidget(split)
+        central = QWidget()
+        lay = QHBoxLayout(central)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
+        lay.addWidget(self.thumbs)
+        lay.addWidget(self.view, 1)
+        self.setCentralWidget(central)
 
         self._make_toolbar()
         self._make_statusbar()
@@ -162,15 +183,6 @@ class MainWindow(QMainWindow):
         a_zo.triggered.connect(self.view.zoom_out)
         tb.addAction(a_zo)
 
-        a_prev = QAction("이전", self)
-        a_prev.setShortcut(QKeySequence.MoveToPreviousPage)  # PgUp
-        a_prev.triggered.connect(self.view.prev_page)
-        tb.addAction(a_prev)
-        a_next = QAction("다음", self)
-        a_next.setShortcut(QKeySequence.MoveToNextPage)  # PgDn
-        a_next.triggered.connect(self.view.next_page)
-        tb.addAction(a_next)
-
         self._update_action_enabled(None)
 
     def _update_action_enabled(self, sel):
@@ -228,8 +240,11 @@ class MainWindow(QMainWindow):
         self.thumbs.clear()
         for i in range(self.doc.page_count):
             png = self.doc.render_thumb_png(i, config.THUMB_WIDTH)
-            img = QImage.fromData(png, "png")
-            item = QListWidgetItem(QIcon(QPixmap.fromImage(img)), f"{i + 1}")
+            pm = QPixmap.fromImage(QImage.fromData(png, "png"))
+            icon = QIcon()
+            icon.addPixmap(pm, QIcon.Mode.Normal)
+            icon.addPixmap(pm, QIcon.Mode.Selected)  # 선택 시 파란 틴트 방지
+            item = QListWidgetItem(icon, f"{i + 1}")
             self.thumbs.addItem(item)
         self.thumbs.setCurrentRow(0)
         self.thumbs.blockSignals(False)
