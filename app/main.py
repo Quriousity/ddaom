@@ -8,9 +8,11 @@ def main() -> int:
     from PySide6.QtWidgets import QApplication
 
     from .ui.main_window import MainWindow
+    from .ui.theme import apply_theme
 
     app = QApplication(sys.argv)
     app.setApplicationName("PDF 영역 도구")
+    apply_theme(app)
     win = MainWindow()
     win.show()
     if len(sys.argv) > 1:

@@ -11,7 +11,8 @@ from __future__ import annotations
 import os
 import traceback
 
-from PySide6.QtCore import QObject, QRunnable, QSize, QThreadPool, Signal, Slot
+from PySide6.QtCore import (QObject, QRunnable, QSize, QThreadPool, QTimer,
+                            Signal, Slot)
 from PySide6.QtGui import QAction, QIcon, QImage, QKeySequence, QPixmap
 from PySide6.QtWidgets import (QFileDialog, QHBoxLayout, QInputDialog, QLabel,
                                QListWidget, QListWidgetItem, QMainWindow,
@@ -130,6 +131,13 @@ class MainWindow(QMainWindow):
                                lambda _: self._set_ocr_status("준비됨"),
                                lambda e: self._set_ocr_status("실패"))
 
+    def showEvent(self, ev):
+        # 창이 처음 표시된 뒤 페이지 맞춤 — 레이아웃 전 fit 계산으로 6% 줌이 되는 것 방지
+        super().showEvent(ev)
+        if self.doc and not getattr(self, "_did_first_fit", False):
+            self._did_first_fit = True
+            QTimer.singleShot(0, self.view.fit_page)
+
     def _start_worker(self, w: _Worker, on_done, on_error):
         self._workers.add(w)
 
@@ -173,6 +181,9 @@ class MainWindow(QMainWindow):
         self.a_destroy.setShortcut("Ctrl+D")
         self.a_destroy.triggered.connect(self.destroy_selection)
         tb.addAction(self.a_destroy)
+        btn_destroy = tb.widgetForAction(self.a_destroy)
+        if btn_destroy:  # 파괴 버튼은 hover 시 빨강 (theme.py #danger)
+            btn_destroy.setObjectName("danger")
         tb.addSeparator()
 
         # 글자 인식 표시 — 토글 스위치 (T)
