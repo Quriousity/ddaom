@@ -260,3 +260,30 @@ class TestPostprocess:
     def test_line_grouping_order(self):
         words = [(50, 10, 80, 20, "B"), (10, 10, 40, 20, "A"), (10, 40, 40, 50, "C")]
         assert extractor.group_words_into_lines(words) == "A B\nC"
+
+
+# ---------- 페이지 텍스트 박스 스캔 (호버→클릭 복사) ----------
+
+class TestScanPageBoxes:
+    def test_text_layer_boxes(self, text_doc):
+        boxes, source = extractor.scan_page_boxes(text_doc, 0)
+        assert source == "text-layer"
+        texts = [t for _, t in boxes]
+        assert any("김철수" in t for t in texts)
+        assert any("900101" in t for t in texts)
+        # 폴리곤이 페이지 안에 있다
+        pr = text_doc.page_rect(0)
+        for poly, _ in boxes:
+            for x, y in poly:
+                assert -1 <= x <= pr.width + 1 and -1 <= y <= pr.height + 1
+
+    def test_scan_ocr_boxes(self, scan_doc):
+        boxes, source = extractor.scan_page_boxes(scan_doc, 0)
+        assert source == "ocr"
+        texts = [t for _, t in boxes]
+        assert any("김철수" in t for t in texts)
+        # 박스 좌표 역변환 검증: "김철수" 박스 위치를 글자층 PDF 로 재추출하면 같은 텍스트
+        poly, t = next((p, t) for p, t in boxes if "김철수" in t)
+        bbox = coords.polygon_bbox(poly)
+        # 스캔본 150dpi 이미지에서 해당 줄 y=200 근처 -> pt 로 96 근처여야 한다
+        assert 80 < bbox.y0 < 130, f"박스 y0={bbox.y0} — 좌표 역변환이 틀렸다"

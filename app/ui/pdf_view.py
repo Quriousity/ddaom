@@ -1,28 +1,26 @@
-"""PDF 뷰어 위젯 — 렌더/줌/팬/선택 (명세 §5).
+"""PDF 뷰어 위젯 — 렌더/줌/팬/영역 지정 (명세 §5, 2026-08-04 단순화).
+
+조작은 두 가지뿐이다:
+  - 자동 스캔된 텍스트 박스를 클릭 → textBoxClicked (즉시 복사)
+  - 드래그로 영역 지정 → selectionChanged (복사/저장/파괴는 메인윈도우 몫)
+팬은 스페이스 드래그, 줌은 Ctrl+휠.
 
 좌표 규칙: 씬 좌표 = PDF point * zoom. 선택의 진실은 항상 PDF point 로 보관하고
 줌이 바뀌면 씬 아이템을 다시 그린다. 좌표 산술은 core.coords 만 쓴다 (§4.1).
 """
 from __future__ import annotations
 
-from enum import Enum, auto
-
 import fitz
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QImage, QPainter, QPixmap
 from PySide6.QtWidgets import QGraphicsPixmapItem, QGraphicsScene, QGraphicsView
 
+from .. import config
 from ..core import coords
 from ..core.document import Document
-from .selection import PolygonSelectionItem, RectSelectionItem, RedactMarkItem
+from .selection import RectSelectionItem, TextBoxItem
 
 Point = tuple[float, float]
-
-
-class Tool(Enum):
-    RECT = auto()
-    POLY = auto()
-    PAN = auto()
 
 
 class Selection:
@@ -34,10 +32,6 @@ class Selection:
         self.rect = rect
         self.polygon = polygon
 
-    @property
-    def kind(self) -> str:
-        return "polygon" if self.polygon else "rect"
-
     def bbox(self) -> fitz.Rect:
         return coords.polygon_bbox(self.polygon) if self.polygon else self.rect
 
@@ -46,6 +40,8 @@ class PdfView(QGraphicsView):
     selectionChanged = Signal(object)   # Selection | None
     pageChanged = Signal(int)
     zoomChanged = Signal(float)
+    textBoxClicked = Signal(str)        # 박스 클릭 → 텍스트 (즉시 복사용)
+    pageNeedsScan = Signal(int)         # 이 페이지의 텍스트 박스가 아직 없다
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -58,17 +54,16 @@ class PdfView(QGraphicsView):
         self.doc: Document | None = None
         self.page_no = 0
         self.zoom = 1.0
-        self.tool = Tool.RECT
 
         self._pix_item: QGraphicsPixmapItem | None = None
         self._sel_item = None
-        self._redact_items: list[RedactMarkItem] = []
         self.selection: Selection | None = None
-        self.redactions: dict[int, list] = {}  # page_no -> [fitz.Rect | polygon(pt)]
+        # 자동 스캔된 텍스트 박스: page_no -> [(폴리곤 pt, 텍스트)]
+        self.text_boxes: dict[int, list] = {}
+        self.boxes_visible = True
 
         self._dragging = False
         self._drag_start = QPointF()
-        self._poly_pts_scene: list[QPointF] = []
         self._space_pan = False
 
     # ---------- 문서/페이지 ----------
@@ -76,9 +71,10 @@ class PdfView(QGraphicsView):
     def set_document(self, doc: Document):
         self.doc = doc
         self.page_no = 0
-        self.redactions = {}
+        self.text_boxes = {}
         self.clear_selection()
         self.fit_page()
+        self._request_scan()
 
     def show_page(self, page_no: int):
         if not self.doc or not (0 <= page_no < self.doc.page_count):
@@ -87,12 +83,27 @@ class PdfView(QGraphicsView):
         self.clear_selection()
         self._render()
         self.pageChanged.emit(page_no)
+        self._request_scan()
 
     def next_page(self):
         self.show_page(self.page_no + 1)
 
     def prev_page(self):
         self.show_page(self.page_no - 1)
+
+    def _request_scan(self):
+        if config.SCAN_ON_PAGE_SHOW and self.page_no not in self.text_boxes:
+            self.pageNeedsScan.emit(self.page_no)
+
+    def set_page_boxes(self, page_no: int, boxes: list):
+        """스캔 결과 수신 (백그라운드 워커에서 호출됨)."""
+        self.text_boxes[page_no] = boxes
+        if page_no == self.page_no:
+            self._render()
+
+    def set_boxes_visible(self, visible: bool):
+        self.boxes_visible = visible
+        self._render()
 
     # ---------- 렌더/줌 ----------
 
@@ -104,7 +115,6 @@ class PdfView(QGraphicsView):
         pm = QPixmap.fromImage(img)
         self.scene().clear()
         self._sel_item = None
-        self._redact_items = []
         self._pix_item = self.scene().addPixmap(pm)
         self.scene().setSceneRect(0, 0, pm.width(), pm.height())
         self._redraw_overlays()
@@ -139,17 +149,10 @@ class PdfView(QGraphicsView):
     def zoom_out(self):
         self.set_zoom(self.zoom / 1.25)
 
-    # ---------- 도구/선택 ----------
-
-    def set_tool(self, tool: Tool):
-        self.tool = tool
-        self._poly_pts_scene = []
-        self.setDragMode(QGraphicsView.ScrollHandDrag if tool == Tool.PAN
-                         else QGraphicsView.NoDrag)
+    # ---------- 선택 ----------
 
     def clear_selection(self):
         self.selection = None
-        self._poly_pts_scene = []
         if self._sel_item is not None and self._sel_item.scene() is self.scene():
             self.scene().removeItem(self._sel_item)
         self._sel_item = None
@@ -161,70 +164,34 @@ class PdfView(QGraphicsView):
 
     def _redraw_overlays(self):
         """줌/페이지 변경 후 PDF 좌표 -> 씬 아이템 재구성."""
-        # 리댁션 대기 영역
-        for s in self.redactions.get(self.page_no, []):
-            r = coords.polygon_bbox(s) if isinstance(s, list) else s
-            x0, y0, x1, y1 = coords.pdf_to_scene_rect(r, self.zoom)
-            item = RedactMarkItem(QRectF(x0, y0, x1 - x0, y1 - y0))
-            self.scene().addItem(item)
-            self._redact_items.append(item)
+        # 자동 스캔 텍스트 박스 (호버→클릭 복사)
+        if self.boxes_visible:
+            for poly_pt, text in self.text_boxes.get(self.page_no, []):
+                pts = [QPointF(*coords.pdf_to_scene_point(x, y, self.zoom))
+                       for x, y in poly_pt]
+                self.scene().addItem(TextBoxItem(pts, text))
         # 현재 선택
         sel = self.selection
-        if sel and sel.page_no == self.page_no:
-            if sel.polygon:
-                pts = [QPointF(*coords.pdf_to_scene_point(x, y, self.zoom))
-                       for x, y in sel.polygon]
-                self._sel_item = PolygonSelectionItem(pts)
-            else:
-                x0, y0, x1, y1 = coords.pdf_to_scene_rect(sel.rect, self.zoom)
-                self._sel_item = RectSelectionItem(QRectF(x0, y0, x1 - x0, y1 - y0))
+        if sel and sel.page_no == self.page_no and sel.rect is not None:
+            x0, y0, x1, y1 = coords.pdf_to_scene_rect(sel.rect, self.zoom)
+            self._sel_item = RectSelectionItem(QRectF(x0, y0, x1 - x0, y1 - y0))
             self.scene().addItem(self._sel_item)
-
-    # ---------- 리댁션 목록 ----------
-
-    def add_selection_to_redactions(self):
-        if not self.selection:
-            return
-        sel = self.selection
-        entry = sel.polygon if sel.polygon else sel.rect
-        self.redactions.setdefault(sel.page_no, []).append(entry)
-        self.clear_selection()
-        self._render()
-
-    def remove_redaction(self, page_no: int, index: int):
-        try:
-            del self.redactions[page_no][index]
-            if not self.redactions[page_no]:
-                del self.redactions[page_no]
-        except (KeyError, IndexError):
-            return
-        if page_no == self.page_no:
-            self._render()
 
     # ---------- 마우스/키 ----------
 
     def mousePressEvent(self, ev):
-        if not self.doc or self.tool == Tool.PAN or self._space_pan:
+        if not self.doc or self._space_pan:
             return super().mousePressEvent(ev)
         if ev.button() == Qt.LeftButton:
-            sp = self.mapToScene(ev.position().toPoint())
-            if self.tool == Tool.RECT:
-                self._dragging = True
-                self._drag_start = sp
-                self.clear_selection()
-            elif self.tool == Tool.POLY:
-                self._poly_pts_scene.append(sp)
-                self._update_poly_preview()
-            ev.accept()
-            return
-        if ev.button() == Qt.RightButton and self.tool == Tool.POLY and self._poly_pts_scene:
-            self._finish_polygon()
+            self._dragging = True
+            self._drag_start = self.mapToScene(ev.position().toPoint())
+            self.clear_selection()
             ev.accept()
             return
         super().mousePressEvent(ev)
 
     def mouseMoveEvent(self, ev):
-        if self._dragging and self.tool == Tool.RECT:
+        if self._dragging:
             sp = self.mapToScene(ev.position().toPoint())
             self._update_rect_preview(self._drag_start, sp)
             ev.accept()
@@ -232,9 +199,20 @@ class PdfView(QGraphicsView):
         super().mouseMoveEvent(ev)
 
     def mouseReleaseEvent(self, ev):
-        if self._dragging and ev.button() == Qt.LeftButton and self.tool == Tool.RECT:
+        if self._dragging and ev.button() == Qt.LeftButton:
             self._dragging = False
             sp = self.mapToScene(ev.position().toPoint())
+            moved = max(abs(sp.x() - self._drag_start.x()),
+                        abs(sp.y() - self._drag_start.y()))
+            if moved <= config.CLICK_DRAG_THRESHOLD_PX:
+                # 드래그가 아니라 클릭 — 텍스트 박스면 즉시 복사
+                self.clear_selection()
+                for item in self.scene().items(sp):
+                    if isinstance(item, TextBoxItem):
+                        self.textBoxClicked.emit(item.text)
+                        break
+                ev.accept()
+                return
             r = coords.scene_to_pdf_rect(self._drag_start.x(), self._drag_start.y(),
                                          sp.x(), sp.y(), self.zoom)
             r = coords.clamp_rect(r, self.doc.page_rect(self.page_no))
@@ -245,13 +223,6 @@ class PdfView(QGraphicsView):
             ev.accept()
             return
         super().mouseReleaseEvent(ev)
-
-    def mouseDoubleClickEvent(self, ev):
-        if self.tool == Tool.POLY and self._poly_pts_scene:
-            self._finish_polygon()
-            ev.accept()
-            return
-        super().mouseDoubleClickEvent(ev)
 
     def wheelEvent(self, ev):
         if ev.modifiers() & Qt.ControlModifier:
@@ -268,10 +239,6 @@ class PdfView(QGraphicsView):
             self.setDragMode(QGraphicsView.ScrollHandDrag)
             ev.accept()
             return
-        if ev.key() in (Qt.Key_Return, Qt.Key_Enter) and self.tool == Tool.POLY:
-            self._finish_polygon()
-            ev.accept()
-            return
         if ev.key() == Qt.Key_Escape:
             self.clear_selection()
             ev.accept()
@@ -281,8 +248,7 @@ class PdfView(QGraphicsView):
     def keyReleaseEvent(self, ev):
         if ev.key() == Qt.Key_Space and not ev.isAutoRepeat():
             self._space_pan = False
-            if self.tool != Tool.PAN:
-                self.setDragMode(QGraphicsView.NoDrag)
+            self.setDragMode(QGraphicsView.NoDrag)
             ev.accept()
             return
         super().keyReleaseEvent(ev)
@@ -294,17 +260,3 @@ class PdfView(QGraphicsView):
             self.scene().removeItem(self._sel_item)
         self._sel_item = RectSelectionItem(QRectF(a, b).normalized())
         self.scene().addItem(self._sel_item)
-
-    def _update_poly_preview(self):
-        if self._sel_item is not None and self._sel_item.scene() is self.scene():
-            self.scene().removeItem(self._sel_item)
-        if len(self._poly_pts_scene) >= 2:
-            self._sel_item = PolygonSelectionItem(self._poly_pts_scene)
-            self.scene().addItem(self._sel_item)
-
-    def _finish_polygon(self):
-        if len(self._poly_pts_scene) >= 3:
-            poly_pt = coords.scene_to_pdf_polygon(
-                [(p.x(), p.y()) for p in self._poly_pts_scene], self.zoom)
-            self._set_selection(Selection(self.page_no, polygon=poly_pt))
-        self._poly_pts_scene = []

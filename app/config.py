@@ -35,3 +35,8 @@ REDACT_FILL_COLOR = (1, 1, 1)
 # --- 렌더 캐시 ---
 PAGE_CACHE_SIZE = 8
 THUMB_WIDTH = 140
+
+# --- 페이지 텍스트 박스 자동 스캔 (호버→클릭 복사) ---
+SCAN_ON_PAGE_SHOW = True
+SCAN_DPI = 200  # 전체 페이지 OCR 렌더 dpi (rapidocr 가 내부에서 max_side 2000 으로 제한)
+CLICK_DRAG_THRESHOLD_PX = 4  # 이하 이동이면 드래그가 아니라 클릭

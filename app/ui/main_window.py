@@ -1,5 +1,9 @@
-"""메인 윈도우 — 메뉴/툴바/단축키/썸네일/리댁션 패널/상태바 (명세 §5).
+"""메인 윈도우 (명세 §5, 2026-08-04 단순화).
 
+UX: 페이지를 열면 자동 스캔된 텍스트 박스를 클릭 → 즉시 복사.
+영역을 드래그로 지정한 뒤엔 세 가지뿐:
+  ① 클립보드에 복사 (텍스트)   ② 이미지로 저장   ③ 영역 파괴 → PDF 저장
+모드 전환·리댁션 대기 목록은 없다.
 OCR·리댁션은 QThreadPool 에서 실행한다. UI 블로킹 금지.
 """
 from __future__ import annotations
@@ -7,19 +11,17 @@ from __future__ import annotations
 import os
 import traceback
 
-import fitz
-from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, Signal, Slot
-from PySide6.QtGui import QAction, QActionGroup, QImage, QKeySequence, QPixmap, QIcon
+from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal, Slot
+from PySide6.QtGui import QAction, QIcon, QImage, QKeySequence, QPixmap
 from PySide6.QtWidgets import (QFileDialog, QInputDialog, QLabel, QListWidget,
                                QListWidgetItem, QMainWindow, QMessageBox,
-                               QPushButton, QSplitter, QToolBar, QVBoxLayout,
-                               QWidget)
+                               QSplitter, QToolBar)
 
 from .. import config
 from ..core import clipboard, extractor, redactor
 from ..core.document import BadPassword, Document, NeedsPassword
 from ..core.ocr_engine import default_engine
-from .pdf_view import PdfView, Tool
+from .pdf_view import PdfView
 
 
 class _Worker(QRunnable):
@@ -50,6 +52,8 @@ class MainWindow(QMainWindow):
         self.doc_path: str | None = None
         self.pool = QThreadPool.globalInstance()
         self._busy = False
+        # ⚠ 워커 참조 유지 — 없으면 GC 로 완료 시그널이 유실된다
+        self._workers: set[_Worker] = set()
 
         self.view = PdfView(self)
         self.thumbs = QListWidget()
@@ -57,25 +61,9 @@ class MainWindow(QMainWindow):
         self.thumbs.setIconSize(QPixmap(config.THUMB_WIDTH, config.THUMB_WIDTH).size())
         self.thumbs.currentRowChanged.connect(self._on_thumb_clicked)
 
-        # 리댁션 패널
-        panel = QWidget()
-        pv = QVBoxLayout(panel)
-        pv.setContentsMargins(4, 4, 4, 4)
-        pv.addWidget(QLabel("리댁션 대기 목록"))
-        self.redact_list = QListWidget()
-        pv.addWidget(self.redact_list)
-        btn_del = QPushButton("선택 항목 삭제")
-        btn_del.clicked.connect(self._remove_redaction_entry)
-        pv.addWidget(btn_del)
-        self.btn_apply = QPushButton("일괄 적용 → 새 PDF 저장")
-        self.btn_apply.clicked.connect(self._apply_redactions)
-        pv.addWidget(self.btn_apply)
-        panel.setFixedWidth(240)
-
         split = QSplitter()
         split.addWidget(self.thumbs)
         split.addWidget(self.view)
-        split.addWidget(panel)
         split.setStretchFactor(1, 1)
         self.setCentralWidget(split)
 
@@ -85,16 +73,32 @@ class MainWindow(QMainWindow):
         self.view.selectionChanged.connect(self._on_selection_changed)
         self.view.pageChanged.connect(self._on_page_changed)
         self.view.zoomChanged.connect(lambda z: self._update_status())
+        self.view.textBoxClicked.connect(self._on_text_box_clicked)
+        self.view.pageNeedsScan.connect(self._scan_page)
+        self._scanning_pages: set[int] = set()
 
         # OCR 프리로드 — 콜드스타트 제거 (§4.6)
+        self.ocr_status = "대기"
         if config.OCR_PRELOAD_ON_START:
             self.ocr_status = "준비 중…"
-            w = _Worker(lambda: default_engine().preload())
-            w.signals.done.connect(lambda _: self._set_ocr_status("준비됨"))
-            w.signals.error.connect(lambda e: self._set_ocr_status("실패"))
-            self.pool.start(w)
-        else:
-            self.ocr_status = "대기"
+            self._start_worker(_Worker(lambda: default_engine().preload()),
+                               lambda _: self._set_ocr_status("준비됨"),
+                               lambda e: self._set_ocr_status("실패"))
+
+    def _start_worker(self, w: _Worker, on_done, on_error):
+        self._workers.add(w)
+
+        def _done(res):
+            self._workers.discard(w)
+            on_done(res)
+
+        def _err(e):
+            self._workers.discard(w)
+            on_error(e)
+
+        w.signals.done.connect(_done)
+        w.signals.error.connect(_err)
+        self.pool.start(w)
 
     # ---------- 툴바/단축키 ----------
 
@@ -109,38 +113,27 @@ class MainWindow(QMainWindow):
         tb.addAction(a_open)
         tb.addSeparator()
 
-        group = QActionGroup(self)
-        self.a_rect = QAction("사각형 (R)", self, checkable=True, checked=True)
-        self.a_poly = QAction("폴리곤 (P)", self, checkable=True)
-        self.a_pan = QAction("팬 (H)", self, checkable=True)
-        for a, key, tool in ((self.a_rect, "R", Tool.RECT),
-                             (self.a_poly, "P", Tool.POLY),
-                             (self.a_pan, "H", Tool.PAN)):
-            a.setShortcut(key)
-            a.triggered.connect(lambda _, t=tool: self.view.set_tool(t))
-            group.addAction(a)
-            tb.addAction(a)
+        # 영역 지정 후 할 수 있는 세 가지 — 이게 전부다
+        self.a_copy = QAction("클립보드에 복사", self)
+        self.a_copy.setShortcut(QKeySequence.Copy)
+        self.a_copy.triggered.connect(self.copy_selection_text)
+        tb.addAction(self.a_copy)
+
+        self.a_save_img = QAction("이미지로 저장", self)
+        self.a_save_img.setShortcut(QKeySequence.Save)
+        self.a_save_img.triggered.connect(self.save_selection_image)
+        tb.addAction(self.a_save_img)
+
+        self.a_destroy = QAction("영역 파괴 → PDF 저장", self)
+        self.a_destroy.setShortcut("Ctrl+D")
+        self.a_destroy.triggered.connect(self.destroy_selection)
+        tb.addAction(self.a_destroy)
         tb.addSeparator()
 
-        a_copy = QAction("텍스트 복사", self)
-        a_copy.setShortcut(QKeySequence.Copy)
-        a_copy.triggered.connect(self.copy_text)
-        tb.addAction(a_copy)
-
-        a_copy_img = QAction("이미지 복사", self)
-        a_copy_img.setShortcut("Ctrl+Shift+C")
-        a_copy_img.triggered.connect(self.copy_image)
-        tb.addAction(a_copy_img)
-
-        a_save_img = QAction("이미지 저장", self)
-        a_save_img.setShortcut("Ctrl+Shift+S")
-        a_save_img.triggered.connect(self.save_image)
-        tb.addAction(a_save_img)
-
-        a_redact = QAction("리댁션 추가", self)
-        a_redact.setShortcut(QKeySequence.Delete)
-        a_redact.triggered.connect(self.add_redaction)
-        tb.addAction(a_redact)
+        self.a_boxes = QAction("텍스트 상자 (T)", self, checkable=True, checked=True)
+        self.a_boxes.setShortcut("T")
+        self.a_boxes.toggled.connect(self.view.set_boxes_visible)
+        tb.addAction(self.a_boxes)
         tb.addSeparator()
 
         a_fit = QAction("맞춤", self)
@@ -165,10 +158,17 @@ class MainWindow(QMainWindow):
         a_next.triggered.connect(self.view.next_page)
         tb.addAction(a_next)
 
+        self._update_action_enabled(None)
+
+    def _update_action_enabled(self, sel):
+        has = sel is not None
+        for a in (self.a_copy, self.a_save_img, self.a_destroy):
+            a.setEnabled(has)
+
     def _make_statusbar(self):
         self.lbl_page = QLabel("- / -")
         self.lbl_zoom = QLabel("100%")
-        self.lbl_sel = QLabel("선택 없음")
+        self.lbl_sel = QLabel("영역을 드래그하거나, 텍스트 상자를 클릭해 복사")
         self.lbl_ocr = QLabel("OCR: -")
         for w in (self.lbl_page, self.lbl_zoom, self.lbl_sel, self.lbl_ocr):
             self.statusBar().addPermanentWidget(w)
@@ -203,7 +203,6 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"PDF 영역 도구 — {os.path.basename(path)}")
         self.view.set_document(doc)
         self._fill_thumbs()
-        self._refresh_redact_list()
         self._update_status()
 
     def _fill_thumbs(self):
@@ -217,28 +216,61 @@ class MainWindow(QMainWindow):
         self.thumbs.setCurrentRow(0)
         self.thumbs.blockSignals(False)
 
-    # ---------- 선택/추출 ----------
+    # ---------- 텍스트 박스 자동 스캔 (호버→클릭 복사) ----------
+
+    def _scan_page(self, page_no: int):
+        if not self.doc or page_no in self._scanning_pages:
+            return
+        self._scanning_pages.add(page_no)
+        self._set_ocr_status("페이지 스캔 중…")
+        doc = self.doc
+        self._start_worker(
+            _Worker(extractor.scan_page_boxes, doc, page_no),
+            lambda res, p=page_no, d=doc: self._on_scan_done(d, p, res),
+            lambda e, p=page_no: self._on_scan_error(p, e))
+
+    def _on_scan_done(self, doc, page_no: int, result):
+        self._scanning_pages.discard(page_no)
+        if doc is not self.doc:  # 그 사이 다른 문서를 열었다
+            return
+        boxes, source = result
+        self.view.set_page_boxes(page_no, boxes)
+        self._set_ocr_status("준비됨")
+        if page_no == self.view.page_no:
+            self.statusBar().showMessage(
+                f"텍스트 상자 {len(boxes)}개 "
+                f"({'글자층' if source == 'text-layer' else 'OCR'}) — 클릭하면 복사", 4000)
+
+    def _on_scan_error(self, page_no: int, tb: str):
+        self._scanning_pages.discard(page_no)
+        self._set_ocr_status("준비됨")
+        self.statusBar().showMessage("페이지 스캔 실패", 4000)
+
+    def _on_text_box_clicked(self, text: str):
+        clipboard.set_text(text)
+        self.statusBar().showMessage(f"복사됨: {text[:60]}", 4000)
+
+    # ---------- ① 클립보드에 복사 (텍스트) ----------
 
     def _require_selection(self):
         if not self.doc:
             self.statusBar().showMessage("먼저 PDF 를 여세요", 3000)
             return None
         if not self.view.selection:
-            self.statusBar().showMessage("영역을 먼저 선택하세요", 3000)
+            self.statusBar().showMessage("영역을 먼저 드래그하세요", 3000)
             return None
         return self.view.selection
 
-    def copy_text(self):
+    def copy_selection_text(self):
         sel = self._require_selection()
         if not sel or self._busy:
             return
         self._busy = True
         self._set_ocr_status("인식 중…")
-        w = _Worker(extractor.extract_text, self.doc, sel.page_no,
-                    rect=sel.rect, polygon=sel.polygon)
-        w.signals.done.connect(self._on_text_done)
-        w.signals.error.connect(self._on_worker_error)
-        self.pool.start(w)
+        self._start_worker(
+            _Worker(extractor.extract_text, self.doc, sel.page_no,
+                    rect=sel.rect, polygon=sel.polygon),
+            self._on_text_done, self._on_worker_error)
 
     def _on_text_done(self, result):
         text, source = result
@@ -252,111 +284,74 @@ class MainWindow(QMainWindow):
         else:
             self.statusBar().showMessage("영역에서 텍스트를 찾지 못했습니다", 4000)
 
-    def copy_image(self):
-        sel = self._require_selection()
-        if not sel:
-            return
-        img = extractor.extract_image(self.doc, sel.page_no,
-                                      rect=sel.rect, polygon=sel.polygon)
-        clipboard.set_image(img)  # 흰 배경 합성 (§4.4)
-        self.statusBar().showMessage(f"이미지 복사됨 ({img.width}×{img.height}px)", 4000)
+    # ---------- ② 이미지로 저장 ----------
 
-    def save_image(self):
+    def save_selection_image(self):
         sel = self._require_selection()
         if not sel:
             return
         base = os.path.splitext(os.path.basename(self.doc_path or "clip"))[0]
-        path, filt = QFileDialog.getSaveFileName(
-            self, "이미지 저장", f"{base}_p{sel.page_no + 1}.png",
+        path, _ = QFileDialog.getSaveFileName(
+            self, "이미지로 저장", f"{base}_p{sel.page_no + 1}.png",
             "PNG (*.png);;JPEG (*.jpg);;WEBP (*.webp)")
         if not path:
             return
-        transparent = sel.polygon is not None and path.lower().endswith(".png")
         img = extractor.extract_image(self.doc, sel.page_no,
-                                      rect=sel.rect, polygon=sel.polygon,
-                                      transparent_outside=transparent)
+                                      rect=sel.rect, polygon=sel.polygon)
         if path.lower().endswith((".jpg", ".jpeg")) and img.mode == "RGBA":
             img = img.convert("RGB")
         img.save(path)
-        self.statusBar().showMessage(f"저장됨: {path}", 5000)
+        clipboard.set_image(img)  # 저장하면서 클립보드에도 넣어준다 (§4.4 흰 배경 합성)
+        self.statusBar().showMessage(f"저장됨 (+클립보드): {path}", 5000)
 
-    # ---------- 리댁션 ----------
+    # ---------- ③ 영역 파괴 → PDF 저장 ----------
 
-    def add_redaction(self):
+    def destroy_selection(self):
         sel = self._require_selection()
-        if not sel:
-            return
-        self.view.add_selection_to_redactions()
-        self._refresh_redact_list()
-
-    def _refresh_redact_list(self):
-        self.redact_list.clear()
-        for page_no in sorted(self.view.redactions):
-            for i, s in enumerate(self.view.redactions[page_no]):
-                kind = "폴리곤" if isinstance(s, list) else "사각형"
-                r = s if not isinstance(s, list) else None
-                size = (f"{r.width:.0f}×{r.height:.0f}pt" if r is not None else
-                        f"{len(s)}점")
-                item = QListWidgetItem(f"p{page_no + 1} {kind} {size}")
-                item.setData(Qt.UserRole, (page_no, i))
-                self.redact_list.addItem(item)
-        n = sum(len(v) for v in self.view.redactions.values())
-        self.btn_apply.setEnabled(n > 0)
-        self.btn_apply.setText(f"일괄 적용 → 새 PDF 저장 ({n})")
-
-    def _remove_redaction_entry(self):
-        item = self.redact_list.currentItem()
-        if not item:
-            return
-        page_no, idx = item.data(Qt.UserRole)
-        self.view.remove_redaction(page_no, idx)
-        self._refresh_redact_list()
-
-    def _apply_redactions(self):
-        if not self.doc_path or not self.view.redactions or self._busy:
+        if not sel or not self.doc_path or self._busy:
             return
         base, ext = os.path.splitext(self.doc_path)
         dst, _ = QFileDialog.getSaveFileName(
-            self, "리댁션 PDF 저장", f"{base}_redacted{ext}", "PDF (*.pdf)")
+            self, "파괴된 PDF 저장", f"{base}_destroyed{ext}", "PDF (*.pdf)")
         if not dst:
             return
         if os.path.abspath(dst) == os.path.abspath(self.doc_path):
             QMessageBox.warning(self, "거부", "원본 덮어쓰기는 금지입니다. 다른 이름을 쓰세요.")
             return
-        self._busy = True
-        self.btn_apply.setEnabled(False)
-        w = _Worker(redactor.redact, self.doc_path, dict(self.view.redactions), dst,
-                    password=getattr(self, "_doc_password", None))
-        w.signals.done.connect(self._on_redact_done)
-        w.signals.error.connect(self._on_worker_error)
-        self.pool.start(w)
+        self._destroy_to(sel, dst)
 
-    def _on_redact_done(self, report: redactor.RedactionReport):
+    def _destroy_to(self, sel, dst: str):
+        entry = sel.polygon if sel.polygon else sel.rect
+        self._busy = True
+        self._start_worker(
+            _Worker(redactor.redact, self.doc_path, {sel.page_no: [entry]}, dst,
+                    password=getattr(self, "_doc_password", None)),
+            self._on_destroy_done, self._on_worker_error)
+
+    def _on_destroy_done(self, report: redactor.RedactionReport):
         self._busy = False
-        self._refresh_redact_list()
         # 검증이 기능의 일부다 (§4.5) — 결과를 반드시 보여준다
         if report.ok:
-            QMessageBox.information(self, "리댁션 완료", report.summary())
-            self.view.redactions = {}
-            self.view.show_page(self.view.page_no)
-            self._refresh_redact_list()
+            QMessageBox.information(self, "파괴 완료", report.summary())
+            self.view.clear_selection()
         else:
-            QMessageBox.critical(self, "리댁션 검증 실패", report.summary())
+            QMessageBox.critical(self, "파괴 검증 실패", report.summary())
 
     # ---------- 상태 ----------
 
     def _on_worker_error(self, tb: str):
         self._busy = False
         self._set_ocr_status("준비됨")
-        self._refresh_redact_list()
         QMessageBox.critical(self, "오류", tb[-1500:])
 
     def _on_selection_changed(self, sel):
+        self._update_action_enabled(sel)
         if sel is None:
-            self.lbl_sel.setText("선택 없음")
+            self.lbl_sel.setText("영역을 드래그하거나, 텍스트 상자를 클릭해 복사")
         else:
             b = sel.bbox()
-            self.lbl_sel.setText(f"{sel.kind} {b.width:.0f}×{b.height:.0f}pt")
+            self.lbl_sel.setText(f"선택 {b.width:.0f}×{b.height:.0f}pt — "
+                                 f"복사(Ctrl+C)/저장(Ctrl+S)/파괴(Ctrl+D)")
 
     def _on_page_changed(self, page_no: int):
         self.thumbs.blockSignals(True)

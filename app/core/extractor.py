@@ -119,6 +119,41 @@ def _ocr_region(doc: Document, page_no: int, clip: fitz.Rect,
     return group_words_into_lines(words), lines
 
 
+# --- 페이지 텍스트 박스 스캔 (호버→클릭 복사용) ---
+
+def scan_page_boxes(doc: Document, page_no: int, engine: OCREngine | None = None
+                    ) -> tuple[list[tuple[list[Point], str]], str]:
+    """페이지 전체의 줄 단위 텍스트 박스를 돌려준다.
+
+    반환: ([(폴리곤(PDF point), 텍스트), ...], 출처)
+    글자층이 있으면 즉시(줄 bbox), 없으면 전체 페이지 OCR (det 폴리곤).
+    """
+    page = doc.page(page_no)
+    boxes: list[tuple[list[Point], str]] = []
+
+    d = page.get_text("dict")
+    for block in d.get("blocks", []):
+        if block.get("type") != 0:
+            continue
+        for line in block.get("lines", []):
+            text = "".join(s.get("text", "") for s in line.get("spans", [])).strip()
+            if text:
+                x0, y0, x1, y1 = line["bbox"]
+                boxes.append(([(x0, y0), (x1, y0), (x1, y1), (x0, y1)], text))
+    if boxes:
+        return boxes, "text-layer"
+
+    # 스캔본 — 전체 페이지 OCR. 결과 폴리곤은 crop px -> PDF pt 로 역변환 (§4.1-4)
+    dpi = config.SCAN_DPI
+    png = doc.render_clip_png(page_no, page.rect, dpi)
+    img = np.array(Image.open(io.BytesIO(png)).convert("RGB"))
+    lines = (engine or default_engine()).run(img, single_line=False)
+    for ln in lines:
+        poly_pt = coords.crop_polygon_to_pdf(ln.polygon, page.rect, dpi, pad_px=0)
+        boxes.append((poly_pt, ln.text))
+    return boxes, "ocr"
+
+
 # --- 공개 API ---
 
 def extract_text(doc: Document, page_no: int,
