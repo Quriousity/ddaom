@@ -58,12 +58,17 @@ QToolButton {{
 QToolButton:hover {{ background: {SURFACE_HI}; }}
 QToolButton:pressed {{ background: {ACCENT_DIM}; color: white; }}
 QToolButton:disabled {{ color: rgba(230,232,235,0.35); }}
-/* 접기/펴기 토글: 펴짐 = 눌린 상태감, 접힘 = 해제 상태감.
-   해제 상태에도 같은 두께의 투명 테두리 — 상태 전환 시 폭이 변하지 않는다 */
+/* 접기/펴기 토글: 펴짐 = 액센트 틴트, 접힘 = 흐린 글자.
+   해제 상태에도 같은 두께의 투명 테두리 — 상태 전환 시 폭이 변하지 않는다.
+   hover 는 같은 액센트의 한 단계 진하기로 자연스럽게 이어진다 */
 QToolButton[checkable="true"] {{ color: {TEXT_MUTED};
     border: 1px solid transparent; }}
-QToolButton:checked {{ background: {SURFACE_HI}; color: {TEXT};
-    border: 1px solid {BORDER}; }}
+QToolButton:checked {{
+    background: rgba(99,102,241,0.18);
+    color: #c7d2fe;                       /* indigo-200 */
+    border: 1px solid rgba(99,102,241,0.45);
+}}
+QToolButton:checked:hover {{ background: rgba(99,102,241,0.30); }}
 QToolButton#danger:hover {{ background: {DANGER}; color: white; }}
 
 QStatusBar {{
