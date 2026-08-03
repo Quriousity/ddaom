@@ -113,6 +113,18 @@ QLineEdit {{
 }}
 QLineEdit:focus {{ border-color: {ACCENT}; }}
 
+#tray {{ border-left: 1px solid {BORDER}; }}
+#trayTitle {{ color: {TEXT_MUTED}; font-weight: 600; }}
+QPlainTextEdit {{
+    background: {SURFACE_HI};
+    border: 1px solid {BORDER};
+    border-radius: 8px;
+    padding: 8px;
+    color: {TEXT};
+    selection-background-color: {ACCENT};
+}}
+QPlainTextEdit:focus {{ border-color: {ACCENT}; }}
+
 QToolTip {{
     background: {SURFACE_HI};
     color: {TEXT};

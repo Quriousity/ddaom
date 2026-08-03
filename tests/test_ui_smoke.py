@@ -223,3 +223,20 @@ class TestSavePathRules:
         assert p1 == str(tmp_path / "계약서_redacted.pdf")
         open(p1, "w").close()
         assert _next_redacted_path(src).endswith("_redacted2.pdf")
+
+
+class TestTray:
+    def test_click_appends_to_tray(self, win, qapp):
+        win.open_file(os.path.join(OUT, "text.pdf"))
+        _wait_pool(win, qapp)
+        win.view.textBoxClicked.emit("세무사 김철수")
+        win.view.textBoxClicked.emit("123-45-67890")
+        qapp.processEvents()
+        t = win.tray.toPlainText()
+        assert "세무사 김철수" in t and "123-45-67890" in t
+        # 전체 복사
+        win._copy_tray()
+        assert "123-45-67890" in qapp.clipboard().text()
+        # 지우기
+        win.btn_tray_clear.click()
+        assert win.tray.toPlainText() == ""

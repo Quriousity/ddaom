@@ -16,7 +16,8 @@ from PySide6.QtCore import (QObject, QRunnable, QSize, Qt, QThreadPool, QTimer,
 from PySide6.QtGui import QAction, QIcon, QImage, QKeySequence, QPixmap
 from PySide6.QtWidgets import (QFileDialog, QHBoxLayout, QInputDialog, QLabel,
                                QListWidget, QListWidgetItem, QMainWindow,
-                               QMessageBox, QToolBar, QWidget)
+                               QMessageBox, QPlainTextEdit, QPushButton,
+                               QToolBar, QVBoxLayout, QWidget)
 
 from .. import config
 from ..core import clipboard, extractor, redactor
@@ -109,12 +110,35 @@ class MainWindow(QMainWindow):
             "  border: 2px solid palette(highlight); border-radius: 3px; }")
         self.thumbs.currentRowChanged.connect(self._on_thumb_clicked)
 
+        # 담은 텍스트 트레이 — 클릭/복사한 내용이 쌓이고, 편집 후 한 번에 복사
+        tray_panel = QWidget()
+        tray_panel.setFixedWidth(280)
+        tray_panel.setObjectName("tray")
+        tv = QVBoxLayout(tray_panel)
+        tv.setContentsMargins(10, 10, 10, 10)
+        tv.setSpacing(8)
+        tray_head = QLabel("담은 텍스트")
+        tray_head.setObjectName("trayTitle")
+        tv.addWidget(tray_head)
+        self.tray = QPlainTextEdit()
+        self.tray.setPlaceholderText("글자 상자를 클릭하거나 영역을 복사하면\n여기에 쌓입니다. 자유롭게 고치세요.")
+        tv.addWidget(self.tray, 1)
+        row = QHBoxLayout()
+        self.btn_tray_copy = QPushButton("전체 복사")
+        self.btn_tray_copy.clicked.connect(self._copy_tray)
+        self.btn_tray_clear = QPushButton("지우기")
+        self.btn_tray_clear.clicked.connect(self.tray.clear)
+        row.addWidget(self.btn_tray_copy)
+        row.addWidget(self.btn_tray_clear)
+        tv.addLayout(row)
+
         central = QWidget()
         lay = QHBoxLayout(central)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(0)
         lay.addWidget(self.thumbs)
         lay.addWidget(self.view, 1)
+        lay.addWidget(tray_panel)
         self.setCentralWidget(central)
 
         self._make_toolbar()
@@ -328,6 +352,7 @@ class MainWindow(QMainWindow):
 
     def _on_text_box_clicked(self, text: str):
         clipboard.set_text(text)
+        self._append_tray(text)
         self.statusBar().showMessage(f"복사됨: {text[:60]}", 4000)
 
     # ---------- ① 클립보드에 복사 (텍스트) ----------
@@ -358,6 +383,7 @@ class MainWindow(QMainWindow):
         self._set_ocr_status("준비됨")
         if text:
             clipboard.set_text(text)
+            self._append_tray(text)
             first = text.splitlines()[0][:40]
             self.statusBar().showMessage(
                 f"복사됨 ({'글자층' if source == 'text-layer' else 'OCR'}): {first}…", 5000)
@@ -422,6 +448,17 @@ class MainWindow(QMainWindow):
             self.view.clear_selection()
         else:
             QMessageBox.critical(self, "파괴 검증 실패", report.summary())
+
+    # ---------- 담은 텍스트 트레이 ----------
+
+    def _append_tray(self, text: str):
+        self.tray.appendPlainText(text)
+
+    def _copy_tray(self):
+        t = self.tray.toPlainText().strip()
+        if t:
+            clipboard.set_text(t)
+            self.statusBar().showMessage("담은 텍스트 전체를 클립보드에 복사했습니다", 4000)
 
     # ---------- 상태 ----------
 
