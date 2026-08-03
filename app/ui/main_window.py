@@ -43,6 +43,29 @@ class _Worker(QRunnable):
             self.signals.error.emit(traceback.format_exc())
 
 
+def _next_image_path(doc_path: str, page_no: int) -> str:
+    """원본 폴더에 {원본명}_p{페이지}_{연번2자리}.png — 절대 덮어쓰지 않는 첫 번호."""
+    d = os.path.dirname(doc_path)
+    stem = os.path.splitext(os.path.basename(doc_path))[0]
+    for i in range(1, 100):
+        p = os.path.join(d, f"{stem}_p{page_no + 1}_{i:02d}.png")
+        if not os.path.exists(p):
+            return p
+    return os.path.join(d, f"{stem}_p{page_no + 1}_99.png")
+
+
+def _next_redacted_path(doc_path: str) -> str:
+    """원본 폴더에 {원본명}_redacted.pdf — 있으면 _redacted2, _redacted3 …"""
+    d = os.path.dirname(doc_path)
+    stem, ext = os.path.splitext(os.path.basename(doc_path))
+    p = os.path.join(d, f"{stem}_redacted{ext}")
+    n = 2
+    while os.path.exists(p):
+        p = os.path.join(d, f"{stem}_redacted{n}{ext}")
+        n += 1
+    return p
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -323,9 +346,8 @@ class MainWindow(QMainWindow):
         sel = self._require_selection()
         if not sel:
             return
-        base = os.path.splitext(os.path.basename(self.doc_path or "clip"))[0]
         path, _ = QFileDialog.getSaveFileName(
-            self, "이미지로 저장", f"{base}_p{sel.page_no + 1}.png",
+            self, "이미지로 저장", _next_image_path(self.doc_path, sel.page_no),
             "PNG (*.png);;JPEG (*.jpg);;WEBP (*.webp)")
         if not path:
             return
@@ -343,9 +365,8 @@ class MainWindow(QMainWindow):
         sel = self._require_selection()
         if not sel or not self.doc_path or self._busy:
             return
-        base, ext = os.path.splitext(self.doc_path)
         dst, _ = QFileDialog.getSaveFileName(
-            self, "파괴된 PDF 저장", f"{base}_destroyed{ext}", "PDF (*.pdf)")
+            self, "파괴된 PDF 저장", _next_redacted_path(self.doc_path), "PDF (*.pdf)")
         if not dst:
             return
         if os.path.abspath(dst) == os.path.abspath(self.doc_path):

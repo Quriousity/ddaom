@@ -203,3 +203,23 @@ class TestPan:
         win.view.mouseReleaseEvent(release)
         assert win.view.verticalScrollBar().value() == v0 + 80  # 위로 80px 끌었다
         assert win.view.selection is None  # 팬은 선택을 만들지 않는다
+
+
+class TestSavePathRules:
+    def test_image_path_rule(self, tmp_path):
+        from app.ui.main_window import _next_image_path
+        src = str(tmp_path / "세금계산서.pdf")
+        open(src, "w").close()
+        p1 = _next_image_path(src, 1)  # 2페이지
+        assert p1 == str(tmp_path / "세금계산서_p2_01.png")
+        open(p1, "w").close()
+        assert _next_image_path(src, 1).endswith("_p2_02.png")  # 연번 증가, 덮어쓰기 없음
+
+    def test_redacted_path_rule(self, tmp_path):
+        from app.ui.main_window import _next_redacted_path
+        src = str(tmp_path / "계약서.pdf")
+        open(src, "w").close()
+        p1 = _next_redacted_path(src)
+        assert p1 == str(tmp_path / "계약서_redacted.pdf")
+        open(p1, "w").close()
+        assert _next_redacted_path(src).endswith("_redacted2.pdf")
