@@ -17,7 +17,7 @@ from PySide6.QtGui import QAction, QIcon, QImage, QKeySequence, QPixmap
 from PySide6.QtWidgets import (QFileDialog, QHBoxLayout, QInputDialog, QLabel,
                                QListWidget, QListWidgetItem, QMainWindow,
                                QMessageBox, QPlainTextEdit, QPushButton,
-                               QToolBar, QVBoxLayout, QWidget)
+                               QSizePolicy, QToolBar, QVBoxLayout, QWidget)
 
 from .. import config
 from ..core import clipboard, extractor, redactor
@@ -111,10 +111,10 @@ class MainWindow(QMainWindow):
         self.thumbs.currentRowChanged.connect(self._on_thumb_clicked)
 
         # 담은 텍스트 트레이 — 클릭/복사한 내용이 쌓이고, 편집 후 한 번에 복사
-        tray_panel = QWidget()
-        tray_panel.setFixedWidth(280)
-        tray_panel.setObjectName("tray")
-        tv = QVBoxLayout(tray_panel)
+        self.tray_panel = QWidget()
+        self.tray_panel.setFixedWidth(280)
+        self.tray_panel.setObjectName("tray")
+        tv = QVBoxLayout(self.tray_panel)
         tv.setContentsMargins(10, 10, 10, 10)
         tv.setSpacing(8)
         tray_head = QLabel("담은 텍스트")
@@ -138,7 +138,7 @@ class MainWindow(QMainWindow):
         lay.setSpacing(0)
         lay.addWidget(self.thumbs)
         lay.addWidget(self.view, 1)
-        lay.addWidget(tray_panel)
+        lay.addWidget(self.tray_panel)
         self.setCentralWidget(central)
 
         self._make_toolbar()
@@ -245,6 +245,22 @@ class MainWindow(QMainWindow):
         a_zo.triggered.connect(self.view.zoom_out)
         tb.addAction(a_zo)
 
+        spacer = QWidget()
+        spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        tb.addWidget(spacer)
+
+        self.a_thumbs_toggle = QAction("미리보기", self, checkable=True, checked=True)
+        self.a_thumbs_toggle.setShortcut("[")
+        self.a_thumbs_toggle.setToolTip("페이지 미리보기 접기/펴기 ( [ )")
+        self.a_thumbs_toggle.toggled.connect(lambda _: self._update_panels_visible())
+        tb.addAction(self.a_thumbs_toggle)
+
+        self.a_tray_toggle = QAction("담은 텍스트", self, checkable=True, checked=True)
+        self.a_tray_toggle.setShortcut("]")
+        self.a_tray_toggle.setToolTip("담은 텍스트 패널 접기/펴기 ( ] )")
+        self.a_tray_toggle.toggled.connect(lambda _: self._update_panels_visible())
+        tb.addAction(self.a_tray_toggle)
+
         self._update_action_enabled(None)
 
     def _update_action_enabled(self, sel):
@@ -294,12 +310,16 @@ class MainWindow(QMainWindow):
         self._fill_thumbs()
         self._update_status()
 
+    def _update_panels_visible(self):
+        multi = bool(self.doc) and self.doc.page_count > 1
+        self.thumbs.setVisible(self.a_thumbs_toggle.isChecked() and multi)
+        self.tray_panel.setVisible(self.a_tray_toggle.isChecked())
+
     def _fill_thumbs(self):
-        # 1페이지 문서엔 썸네일 사이드바가 무의미하다 — 숨긴다
+        # 1페이지 문서엔 썸네일 사이드바가 무의미하다 — 토글과 무관하게 숨긴다
+        self._update_panels_visible()
         if self.doc.page_count <= 1:
-            self.thumbs.hide()
             return
-        self.thumbs.show()
         self.thumbs.blockSignals(True)
         self.thumbs.clear()
         for i in range(self.doc.page_count):

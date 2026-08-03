@@ -240,3 +240,20 @@ class TestTray:
         # 지우기
         win.btn_tray_clear.click()
         assert win.tray.toPlainText() == ""
+
+    def test_panel_toggles(self, win, qapp, tmp_path):
+        import fitz as _f
+        path = str(tmp_path / "two.pdf")
+        d = _f.open()
+        for i in range(2):
+            d.new_page(width=595, height=842)
+        d.save(path); d.close()
+        win.open_file(path)
+        qapp.processEvents()
+        assert not win.thumbs.isHidden() and not win.tray_panel.isHidden()
+        win.a_thumbs_toggle.setChecked(False)   # 미리보기 접기
+        assert win.thumbs.isHidden()
+        win.a_tray_toggle.setChecked(False)     # 담은 텍스트 접기
+        assert win.tray_panel.isHidden()
+        win.a_thumbs_toggle.setChecked(True)
+        assert not win.thumbs.isHidden()
