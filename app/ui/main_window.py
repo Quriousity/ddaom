@@ -13,15 +13,16 @@ import traceback
 
 from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal, Slot
 from PySide6.QtGui import QAction, QIcon, QImage, QKeySequence, QPixmap
-from PySide6.QtWidgets import (QFileDialog, QInputDialog, QLabel, QListWidget,
-                               QListWidgetItem, QMainWindow, QMessageBox,
-                               QSplitter, QToolBar)
+from PySide6.QtWidgets import (QFileDialog, QHBoxLayout, QInputDialog, QLabel,
+                               QListWidget, QListWidgetItem, QMainWindow,
+                               QMessageBox, QSplitter, QToolBar, QWidget)
 
 from .. import config
 from ..core import clipboard, extractor, redactor
 from ..core.document import BadPassword, Document, NeedsPassword
 from ..core.ocr_engine import default_engine
 from .pdf_view import PdfView
+from .widgets import ToggleSwitch
 
 
 class _Worker(QRunnable):
@@ -130,10 +131,22 @@ class MainWindow(QMainWindow):
         tb.addAction(self.a_destroy)
         tb.addSeparator()
 
-        self.a_boxes = QAction("텍스트 상자 (T)", self, checkable=True, checked=True)
-        self.a_boxes.setShortcut("T")
-        self.a_boxes.toggled.connect(self.view.set_boxes_visible)
-        tb.addAction(self.a_boxes)
+        # 글자 인식 표시 — 토글 스위치 (T)
+        box_wrap = QWidget()
+        box_lay = QHBoxLayout(box_wrap)
+        box_lay.setContentsMargins(8, 0, 8, 0)
+        box_lay.setSpacing(6)
+        box_lay.addWidget(QLabel("글자 인식 표시"))
+        self.sw_boxes = ToggleSwitch(checked=True)
+        self.sw_boxes.setToolTip("글자 영역을 자동 인식해 표시 — 클릭 한 번으로 복사 (T)")
+        self.sw_boxes.toggled.connect(self.view.set_boxes_visible)
+        box_lay.addWidget(self.sw_boxes)
+        tb.addWidget(box_wrap)
+        # 단축키 T 는 그대로
+        a_boxes_key = QAction(self)
+        a_boxes_key.setShortcut("T")
+        a_boxes_key.triggered.connect(self.sw_boxes.toggle)
+        self.addAction(a_boxes_key)
         tb.addSeparator()
 
         a_fit = QAction("맞춤", self)

@@ -151,3 +151,15 @@ class TestTextBoxes:
         boxes = win.view.text_boxes.get(0)
         assert boxes
         assert any("김철수" in t for _, t in boxes)
+
+    def test_toggle_switch_wired(self, win, qapp):
+        win.open_file(os.path.join(OUT, "text.pdf"))
+        _wait_pool(win, qapp)
+        assert win.sw_boxes.isChecked()
+        win.sw_boxes.toggle()   # off
+        qapp.processEvents()
+        assert not win.view.boxes_visible
+        assert not [i for i in win.view.scene().items() if isinstance(i, TextBoxItem)]
+        win.sw_boxes.toggle()   # on
+        qapp.processEvents()
+        assert win.view.boxes_visible
