@@ -5,7 +5,7 @@ cd /d "%~dp0"
 
 echo.
 echo  ============================================
-echo    따옴 (ttaom) - 윈도우 exe 만들기
+echo    따옴 (ddaom) - 윈도우 exe 만들기
 echo  ============================================
 echo.
 echo   이 창을 닫지 마세요. 10~20분 걸립니다.
@@ -110,7 +110,7 @@ if errorlevel 1 (
     goto :fail
 )
 
-if not exist "dist\ttaom\ttaom.exe" (
+if not exist "dist\ddaom\ddaom.exe" (
     echo.
     echo  [실패] exe 파일이 만들어지지 않았습니다.
     goto :fail
@@ -121,14 +121,14 @@ echo  ============================================
 echo    완성됐습니다!
 echo  ============================================
 echo.
-echo    dist\ttaom\ttaom.exe
+echo    dist\ddaom\ddaom.exe
 echo.
-echo    이 폴더(dist\ttaom)를 통째로 원하는 곳에 복사해서 쓰세요.
-echo    ttaom.exe 를 더블클릭하면 실행됩니다.
+echo    이 폴더(dist\ddaom)를 통째로 원하는 곳에 복사해서 쓰세요.
+echo    ddaom.exe 를 더블클릭하면 실행됩니다.
 echo.
 echo    (탐색기를 열어 드립니다)
 echo.
-start "" explorer "%CD%\dist\ttaom"
+start "" explorer "%CD%\dist\ddaom"
 echo  아무 키나 누르면 창이 닫힙니다.
 pause >nul
 exit /b 0

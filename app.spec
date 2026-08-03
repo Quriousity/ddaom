@@ -27,7 +27,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="ttaom",
+    name="ddaom",
     icon="assets/icon.ico",
     debug=False,
     strip=False,
@@ -41,5 +41,5 @@ coll = COLLECT(
     a.datas,
     strip=False,
     upx=False,
-    name="ttaom",  # onedir (§2: onefile 은 기동 지연 + 백신 오탐)
+    name="ddaom",  # onedir (§2: onefile 은 기동 지연 + 백신 오탐)
 )
