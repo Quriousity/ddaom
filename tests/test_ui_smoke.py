@@ -257,3 +257,27 @@ class TestTray:
         assert win.tray_panel.isHidden()
         win.a_thumbs_toggle.setChecked(True)
         assert not win.thumbs.isHidden()
+
+    def test_arrow_keys_navigate_pages(self, win, qapp, tmp_path):
+        import fitz as _f
+        from PySide6.QtCore import QEvent
+        from PySide6.QtCore import Qt as _Qt
+        from PySide6.QtGui import QKeyEvent
+        path = str(tmp_path / "nav.pdf")
+        d = _f.open()
+        for _ in range(3):
+            d.new_page(width=595, height=842)
+        d.save(path); d.close()
+        win.open_file(path)
+        qapp.processEvents()
+        assert win.view.page_no == 0
+        down = QKeyEvent(QEvent.KeyPress, _Qt.Key_Down, _Qt.NoModifier)
+        win.view.keyPressEvent(down)
+        qapp.processEvents()
+        assert win.view.page_no == 1
+        up = QKeyEvent(QEvent.KeyPress, _Qt.Key_Up, _Qt.NoModifier)
+        win.view.keyPressEvent(up)
+        qapp.processEvents()
+        assert win.view.page_no == 0
+        win.view.keyPressEvent(up)   # 첫 페이지에서 ↑ = 그대로
+        assert win.view.page_no == 0

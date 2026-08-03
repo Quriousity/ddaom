@@ -265,6 +265,14 @@ class PdfView(QGraphicsView):
             self.clear_selection()
             ev.accept()
             return
+        if ev.key() == Qt.Key_Up:        # ↑/↓ = 페이지 이동 (스크롤은 휠·팬 담당)
+            self.prev_page()
+            ev.accept()
+            return
+        if ev.key() == Qt.Key_Down:
+            self.next_page()
+            ev.accept()
+            return
         super().keyPressEvent(ev)
 
     def keyReleaseEvent(self, ev):
