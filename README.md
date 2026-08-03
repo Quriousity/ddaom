@@ -90,11 +90,12 @@ python3.11 -m venv .venv
 
 ### exe 빌드 다른 방법
 
-- **GitHub Actions** — push 하면 자동 빌드 (`.github/workflows/build-windows.yml`).
-  Actions 탭에서 `ddaom-win64.zip` 아티팩트를 받으면 빌드용 PC 도 필요 없다.
-  `./setup-exe-build.sh` 가 저장소 생성 → push → 대기 → 다운로드까지 해준다.
 - **수동** (윈도우) — `pip install -r requirements.lock && pyinstaller app.spec`
 - **소스 묶음 만들기** (USB 전달용) — `./tools/make_source_zip.sh` → `ddaom-source.zip`
+- **GitHub Actions** — 워크플로 파일(`.github/workflows/build-windows.yml`)은 로컬에만 두고
+  저장소에는 올리지 않았다 (푸시 토큰에 `workflow` 스코프가 필요하기 때문).
+  쓰려면 토큰에 그 권한을 준 뒤 `.gitignore` 의 `.github/` 줄을 지우고 커밋하면 된다.
+  그러면 push 마다 윈도우 러너가 테스트 + 빌드해 `ddaom-win64.zip` 을 만들어준다.
 
 > ⚠ `requirements.lock` 은 macOS 에서 생성했다. 윈도우 첫 빌드가 실질적 검증이다 —
 > 실패하면 해당 패키지만 버전을 풀어 다시 고정한다.
