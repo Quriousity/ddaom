@@ -1,0 +1,9 @@
+PySide6
+PyMuPDF
+rapidocr-onnxruntime
+Pillow
+numpy
+
+# dev
+pytest
+pyinstaller
