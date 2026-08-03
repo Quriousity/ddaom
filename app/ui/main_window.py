@@ -55,10 +55,14 @@ def _next_image_path(doc_path: str, page_no: int) -> str:
     return os.path.join(d, f"{stem}_p{page_no + 1}_99.png")
 
 
-def _next_redacted_path(doc_path: str) -> str:
-    """원본 폴더에 {원본명}_redacted.pdf — 있으면 _redacted2, _redacted3 …"""
+def _next_redacted_path(doc_path: str, out_ext: str | None = None) -> str:
+    """원본 폴더에 {원본명}_redacted.{확장자} — 있으면 _redacted2, _redacted3 …
+
+    이미지 원본이면 out_ext=".png" 로 호출해 결과도 이미지로 만든다.
+    """
     d = os.path.dirname(doc_path)
     stem, ext = os.path.splitext(os.path.basename(doc_path))
+    ext = out_ext or ext
     p = os.path.join(d, f"{stem}_redacted{ext}")
     n = 2
     while os.path.exists(p):
@@ -235,7 +239,9 @@ class MainWindow(QMainWindow):
     # ---------- 파일 ----------
 
     def open_file_dialog(self):
-        path, _ = QFileDialog.getOpenFileName(self, "PDF 열기", "", "PDF (*.pdf)")
+        path, _ = QFileDialog.getOpenFileName(
+            self, "문서 열기", "",
+            "문서/이미지 (*.pdf *.png *.jpg *.jpeg *.webp *.bmp *.tif *.tiff)")
         if path:
             self.open_file(path)
 
@@ -383,8 +389,13 @@ class MainWindow(QMainWindow):
         sel = self._require_selection()
         if not sel or not self.doc_path or self._busy:
             return
-        dst, _ = QFileDialog.getSaveFileName(
-            self, "파괴된 PDF 저장", _next_redacted_path(self.doc_path), "PDF (*.pdf)")
+        if self.doc.is_image_source:  # 이미지 원본 → 결과도 이미지(PNG 재렌더)
+            dst, _ = QFileDialog.getSaveFileName(
+                self, "파괴된 이미지 저장",
+                _next_redacted_path(self.doc_path, out_ext=".png"), "PNG (*.png)")
+        else:
+            dst, _ = QFileDialog.getSaveFileName(
+                self, "파괴된 PDF 저장", _next_redacted_path(self.doc_path), "PDF (*.pdf)")
         if not dst:
             return
         if os.path.abspath(dst) == os.path.abspath(self.doc_path):
@@ -395,10 +406,13 @@ class MainWindow(QMainWindow):
     def _destroy_to(self, sel, dst: str):
         entry = sel.polygon if sel.polygon else sel.rect
         self._busy = True
-        self._start_worker(
-            _Worker(redactor.redact, self.doc_path, {sel.page_no: [entry]}, dst,
-                    password=getattr(self, "_doc_password", None)),
-            self._on_destroy_done, self._on_worker_error)
+        if self.doc.is_image_source:
+            w = _Worker(redactor.redact_image, self.doc_path,
+                        {sel.page_no: [entry]}, dst)
+        else:
+            w = _Worker(redactor.redact, self.doc_path, {sel.page_no: [entry]}, dst,
+                        password=getattr(self, "_doc_password", None))
+        self._start_worker(w, self._on_destroy_done, self._on_worker_error)
 
     def _on_destroy_done(self, report: redactor.RedactionReport):
         self._busy = False

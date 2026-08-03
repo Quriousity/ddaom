@@ -287,3 +287,54 @@ class TestScanPageBoxes:
         bbox = coords.polygon_bbox(poly)
         # 스캔본 150dpi 이미지에서 해당 줄 y=200 근처 -> pt 로 96 근처여야 한다
         assert 80 < bbox.y0 < 130, f"박스 y0={bbox.y0} — 좌표 역변환이 틀렸다"
+
+
+# ---------- 이미지 파일 입력 (PNG/JPG) ----------
+
+class TestImageInput:
+    @pytest.fixture(scope="class")
+    def sample_png(self, tmp_path_factory):
+        from tools.make_samples import _render_page_image
+        p = str(tmp_path_factory.mktemp("img") / "골든샘플.png")
+        _render_page_image().save(p)
+        return p
+
+    def test_open_and_scan_boxes(self, sample_png):
+        d = Document(sample_png)
+        try:
+            assert d.is_image_source and d.page_count == 1
+            boxes, source = extractor.scan_page_boxes(d, 0)
+            assert source == "ocr"
+            assert any("김철수" in t for _, t in boxes)
+        finally:
+            d.close()
+
+    def test_extract_text_from_image(self, sample_png):
+        d = Document(sample_png)
+        try:
+            # 좌표는 page.rect 기준 — 픽셀 -> pt 스케일을 실측해서 쓴다
+            s = d.page_rect(0).width / 1240
+            rect = fitz.Rect(140 * s, 360 * s, 700 * s, 420 * s)
+            text, source = extractor.extract_text(d, 0, rect=rect)
+            assert source == "ocr"
+            assert "1,234,567" in text.replace(" ", "")
+        finally:
+            d.close()
+
+    def test_redact_image_output_png(self, sample_png, tmp_path):
+        dst = str(tmp_path / "redacted.png")
+        d0 = Document(sample_png)
+        s = d0.page_rect(0).width / 1240
+        d0.close()
+        secret_rect = fitz.Rect(140 * s, 1030 * s, 900 * s, 1100 * s)
+        report = redactor.redact_image(sample_png, {0: [secret_rect]}, dst)
+        assert report.ok, report.summary()
+        assert os.path.exists(dst)
+        # 결과 PNG 를 다시 OCR — 파괴 영역 내용이 읽히지 않아야 한다
+        d2 = Document(dst)
+        try:
+            text, _ = extractor.extract_text(d2, 0, rect=d2.page_rect(0))
+            assert "900101" not in text.replace(" ", "")
+            assert "김철수" in text  # 다른 내용 생존
+        finally:
+            d2.close()

@@ -16,10 +16,28 @@ class BadPassword(Exception):
     pass
 
 
+IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff"}
+
+
+def is_image_path(path: str) -> bool:
+    import os
+    return os.path.splitext(path)[1].lower() in IMAGE_EXTS
+
+
 class Document:
     def __init__(self, path: str, password: str | None = None):
         self.path = path
-        self.doc = fitz.open(path)
+        self.is_image_source = is_image_path(path)
+        if self.is_image_source:
+            # 이미지 → 메모리에서 1페이지 PDF 로 감싼다.
+            # 페이지 pt 크기는 이미지 dpi 메타데이터에 따른다 (없으면 96dpi 가정
+            # → 1px = 0.75pt). 좌표는 항상 page.rect 기준으로 다룰 것.
+            img = fitz.open(path)
+            pdf_bytes = img.convert_to_pdf()
+            img.close()
+            self.doc = fitz.open("pdf", pdf_bytes)
+        else:
+            self.doc = fitz.open(path)
         if self.doc.needs_pass:
             if password is None:
                 self.doc.close()

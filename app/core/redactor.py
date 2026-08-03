@@ -103,6 +103,64 @@ def redact(src_path: str, selections: dict[int, list[Selection]], dst_path: str,
     return _verify(dst_path, rect_map)
 
 
+def redact_image(src_path: str, selections: dict[int, list[Selection]],
+                 dst_path: str,
+                 fill: tuple = config.REDACT_FILL_COLOR) -> RedactionReport:
+    """이미지 원본 파괴: 메모리 PDF 로 감싸 픽셀 파괴 후 PNG 로 재렌더.
+
+    결과가 평탄한 래스터라 숨은 레이어가 있을 수 없고, 재렌더라 EXIF 등
+    메타데이터도 함께 소멸한다.
+    """
+    if dst_path == src_path:
+        raise ValueError("원본 덮어쓰기 금지 — 다른 경로를 지정하라")
+
+    img = fitz.open(src_path)
+    pdf_bytes = img.convert_to_pdf()
+    img.close()
+    doc = fitz.open("pdf", pdf_bytes)
+    try:
+        rect_map: dict[int, list[fitz.Rect]] = {}
+        for page_no, sels in selections.items():
+            rects = [coords.clamp_rect(_to_rect(s), doc[page_no].rect) for s in sels]
+            rects = [r for r in rects if not r.is_empty]
+            if rects:
+                rect_map[page_no] = rects
+        for page_no, rects in rect_map.items():
+            page = doc[page_no]
+            for r in rects:
+                page.add_redact_annot(r, fill=fill)
+            page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_PIXELS,
+                                  graphics=fitz.PDF_REDACT_LINE_ART_REMOVE_IF_TOUCHED,
+                                  text=fitz.PDF_REDACT_TEXT_REMOVE)
+        # 원본 픽셀 해상도로 재렌더 (이미지 dpi 메타데이터에 따라 pt/px 비율이 다르다)
+        src_pix = fitz.Pixmap(src_path)
+        out_dpi = max(1, round(72 * src_pix.width / doc[0].rect.width))
+        src_pix = None
+        pix = doc[0].get_pixmap(dpi=out_dpi, alpha=False)
+        pix.save(dst_path)
+    finally:
+        doc.close()
+
+    # 검증: 결과를 다시 열어 파괴 영역이 fill 색으로 칠해졌는지 확인
+    out = fitz.open(dst_path)
+    try:
+        leftover: dict[int, str] = {}
+        page = out[0]
+        for r in rect_map.get(0, []):
+            clip = coords.clamp_rect(fitz.Rect(r), page.rect)
+            sample = page.get_pixmap(clip=clip, dpi=36, alpha=False)
+            expect = tuple(int(c * 255) for c in fill)
+            n = sample.width * sample.height
+            bad = sum(1 for i in range(0, n)
+                      if sample.pixel(i % sample.width, i // sample.width) != expect)
+            if bad > n * 0.02:  # 2% 초과로 fill 색이 아니면 실패
+                leftover[0] = f"파괴 영역에 원본 픽셀 잔존 의심 ({bad}/{n})"
+        return RedactionReport(ok=not leftover, dst_path=dst_path,
+                               pages_redacted=len(rect_map), leftover_text=leftover)
+    finally:
+        out.close()
+
+
 def _verify(dst_path: str, rect_map: dict[int, list[fitz.Rect]]) -> RedactionReport:
     """저장본을 다시 열어 (a) 리댁션 영역 텍스트 0건 (b) 메타데이터 0 을 확인 (§4.5)."""
     doc = fitz.open(dst_path)
