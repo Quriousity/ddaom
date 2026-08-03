@@ -11,7 +11,7 @@ from __future__ import annotations
 import os
 import traceback
 
-from PySide6.QtCore import (QObject, QRunnable, QSize, QThreadPool, QTimer,
+from PySide6.QtCore import (QObject, QRunnable, QSize, Qt, QThreadPool, QTimer,
                             Signal, Slot)
 from PySide6.QtGui import QAction, QIcon, QImage, QKeySequence, QPixmap
 from PySide6.QtWidgets import (QFileDialog, QHBoxLayout, QInputDialog, QLabel,
@@ -93,8 +93,8 @@ class MainWindow(QMainWindow):
         self.thumbs.setMovement(QListWidget.Movement.Static)
         self.thumbs.setResizeMode(QListWidget.ResizeMode.Adjust)
         self.thumbs.setIconSize(QSize(config.THUMB_WIDTH, int(config.THUMB_WIDTH * 1.45)))
-        self.thumbs.setGridSize(QSize(sidebar_w - 20, int(config.THUMB_WIDTH * 1.45) + 34))
         self.thumbs.setFrameShape(QListWidget.Shape.NoFrame)
+        self.thumbs.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         # 선택 = 테두리 강조선만 (썸네일을 덮지 않는다), 경계는 1px 헤어라인
         self.thumbs.setStyleSheet(
             "QListWidget { background: transparent; outline: none;"
@@ -282,6 +282,13 @@ class MainWindow(QMainWindow):
             self.thumbs.addItem(item)
         self.thumbs.setCurrentRow(0)
         self.thumbs.blockSignals(False)
+        # 그리드 폭 = 실제 뷰포트 폭 → 썸네일 가로 중앙 정렬 (스크롤바 유무 반영)
+        QTimer.singleShot(0, self._update_thumb_grid)
+
+    def _update_thumb_grid(self):
+        w = self.thumbs.viewport().width()
+        if w > 20:
+            self.thumbs.setGridSize(QSize(w, int(config.THUMB_WIDTH * 1.45) + 34))
 
     # ---------- 텍스트 박스 자동 스캔 (호버→클릭 복사) ----------
 
