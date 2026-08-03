@@ -43,8 +43,25 @@ class TestSmoke:
         qapp.processEvents()
         assert win.doc is not None
         assert win.doc.page_count == 1
-        assert win.thumbs.count() == 1
+        assert win.thumbs.isHidden()  # 1페이지 문서 -> 썸네일 사이드바 숨김
         assert win.view.scene().sceneRect().width() > 0
+
+    def test_multipage_shows_thumbs(self, win, qapp, tmp_path):
+        import fitz as _f
+        path = str(tmp_path / "three.pdf")
+        d = _f.open()
+        for i in range(3):
+            pg = d.new_page(width=595, height=842)
+            pg.insert_text((72, 100), f"page {i + 1}", fontsize=20)
+        d.save(path)
+        d.close()
+        win.open_file(path)
+        qapp.processEvents()
+        assert not win.thumbs.isHidden()
+        assert win.thumbs.count() == 3
+        win.thumbs.setCurrentRow(2)   # 썸네일 클릭 -> 페이지 이동
+        qapp.processEvents()
+        assert win.view.page_no == 2
 
     def test_actions_disabled_without_selection(self, win, qapp):
         win.open_file(os.path.join(OUT, "text.pdf"))

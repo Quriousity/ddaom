@@ -219,6 +219,11 @@ class MainWindow(QMainWindow):
         self._update_status()
 
     def _fill_thumbs(self):
+        # 1페이지 문서엔 썸네일 사이드바가 무의미하다 — 숨긴다
+        if self.doc.page_count <= 1:
+            self.thumbs.hide()
+            return
+        self.thumbs.show()
         self.thumbs.blockSignals(True)
         self.thumbs.clear()
         for i in range(self.doc.page_count):
