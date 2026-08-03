@@ -35,10 +35,25 @@ python3.11 -m venv .venv
 
 ## Windows exe 빌드
 
-GitHub Actions 가 push 마다 자동 빌드한다 (`.github/workflows/build-windows.yml`).
-아티팩트 `ttaom-win64.zip` 을 받아 풀고 `ttaom.exe` 실행 — 설치 불필요.
+### 방법 A — 윈도우 PC 에서 더블클릭 (지식 불필요)
+
+1. Mac 에서 `./tools/make_source_zip.sh` → `ttaom-source.zip` (12MB)
+2. USB·구글드라이브로 윈도우 PC 에 옮겨 압축 풀기
+3. **`BUILD-EXE.bat` 더블클릭** → 파이썬 자동 설치 + 부품 내려받기 + exe 빌드까지 한 번에 (10~20분)
+4. 끝나면 탐색기가 열리고 `dist\ttaom\ttaom.exe` 가 있다. 그 폴더째 원하는 곳에 복사해 쓰면 된다
+
+빌드하는 PC 에만 인터넷이 필요하다. 완성된 exe 는 오프라인에서 동작한다.
+
+### 방법 B — GitHub Actions (자동)
+
+push 마다 자동 빌드한다 (`.github/workflows/build-windows.yml`).
+아티팩트 `ttaom-win64.zip` 을 받아 풀고 `ttaom.exe` 실행 — 빌드용 PC 도 필요 없다.
+`./setup-exe-build.sh` 가 저장소 생성 → push → 빌드 대기 → 다운로드까지 해준다.
 
 수동 빌드 (Windows): `pip install -r requirements.lock && pyinstaller app.spec`
+
+> ⚠ `requirements.lock` 은 macOS 에서 생성했다. 윈도우 첫 빌드가 실질적 검증이다 —
+> 실패하면 해당 패키지만 버전을 풀어 다시 고정한다.
 
 ## 구조
 
