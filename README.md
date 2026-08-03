@@ -148,3 +148,23 @@ tools/        make_samples.py(샘플 생성) · make_source_zip.sh
 **소스를 비공개로 배포해야 할 상황이 생기면** PyMuPDF 상용 라이선스를 구매하거나,
 `pypdfium2`(렌더·텍스트) + `pikepdf`(구조·메타데이터)로 교체해야 합니다.
 단 후자에는 진짜 파괴(redaction) 기능이 없어 직접 구현해야 합니다.
+
+### License Notice
+
+```
+ddaom (따옴) — extract, copy and redact text regions from PDFs and images.
+Copyright (C) 2026  Quriousity
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
+```
