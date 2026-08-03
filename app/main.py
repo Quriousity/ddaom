@@ -10,8 +10,17 @@ def main() -> int:
     from .ui.main_window import MainWindow
     from .ui.theme import apply_theme
 
+    import os
+
+    from PySide6.QtGui import QIcon
+
+    from . import config
+
     app = QApplication(sys.argv)
-    app.setApplicationName("PDF 영역 도구")
+    app.setApplicationName("따옴")
+    icon_path = os.path.join(config.BASE, "icon.png")
+    if os.path.exists(icon_path):
+        app.setWindowIcon(QIcon(icon_path))
     apply_theme(app)
     win = MainWindow()
     win.show()

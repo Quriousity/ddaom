@@ -12,7 +12,7 @@ a = Analysis(
     ["run_app.py"],
     pathex=[],
     binaries=onnx_bins + rapid_bins,
-    datas=[("app/models", "models")] + onnx_datas + rapid_datas,  # §2.1 한국어 모델 번들
+    datas=[("app/models", "models"), ("app/icon.png", ".")] + onnx_datas + rapid_datas,  # §2.1 모델 + 아이콘
     hiddenimports=onnx_hidden + rapid_hidden,
     hookspath=[],
     runtime_hooks=[],
@@ -27,7 +27,8 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="pdf-area-tool",
+    name="ttaom",
+    icon="assets/icon.ico",
     debug=False,
     strip=False,
     upx=False,
@@ -40,5 +41,5 @@ coll = COLLECT(
     a.datas,
     strip=False,
     upx=False,
-    name="pdf-area-tool",  # onedir (§2: onefile 은 기동 지연 + 백신 오탐)
+    name="ttaom",  # onedir (§2: onefile 은 기동 지연 + 백신 오탐)
 )

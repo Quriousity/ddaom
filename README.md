@@ -1,4 +1,4 @@
-# pdf-area-tool
+# 따옴 (ttaom)
 
 PDF 를 열어 마우스로 영역(사각형/폴리곤)을 지정하면 그 영역의 **텍스트를 클립보드에 복사**하는
 Windows 데스크톱 앱. 한국어·영어·숫자 혼용 문서 대상. **완전 오프라인** (모델 번들).
@@ -36,7 +36,7 @@ python3.11 -m venv .venv
 ## Windows exe 빌드
 
 GitHub Actions 가 push 마다 자동 빌드한다 (`.github/workflows/build-windows.yml`).
-아티팩트 `pdf-area-tool-win64.zip` 을 받아 풀고 `pdf-area-tool.exe` 실행 — 설치 불필요.
+아티팩트 `ttaom-win64.zip` 을 받아 풀고 `ttaom.exe` 실행 — 설치 불필요.
 
 수동 빌드 (Windows): `pip install -r requirements.lock && pyinstaller app.spec`
 

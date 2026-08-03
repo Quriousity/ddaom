@@ -26,8 +26,8 @@ gh run watch "$RUN_ID" --exit-status
 
 echo "== 4/4 exe 다운로드 =="
 rm -rf ./exe-download && mkdir -p ./exe-download
-gh run download "$RUN_ID" -n pdf-area-tool-win64 -D ./exe-download
+gh run download "$RUN_ID" -n ttaom-win64 -D ./exe-download
 
 echo ""
-echo "완료 → $(pwd)/exe-download/pdf-area-tool-win64.zip"
-echo "윈도우 PC 에 복사해서 압축 풀고 pdf-area-tool.exe 실행 (설치 불필요, 오프라인 동작)"
+echo "완료 → $(pwd)/exe-download/ttaom-win64.zip"
+echo "윈도우 PC 에 복사해서 압축 풀고 ttaom.exe 실행 (설치 불필요, 오프라인 동작)"

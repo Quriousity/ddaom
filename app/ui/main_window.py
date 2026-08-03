@@ -74,7 +74,7 @@ def _next_redacted_path(doc_path: str, out_ext: str | None = None) -> str:
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("PDF 영역 도구")
+        self.setWindowTitle("따옴")
         self.resize(1280, 860)
 
         self.doc: Document | None = None
@@ -265,7 +265,7 @@ class MainWindow(QMainWindow):
         self.doc = doc
         self.doc_path = path
         self._doc_password = password
-        self.setWindowTitle(f"PDF 영역 도구 — {os.path.basename(path)}")
+        self.setWindowTitle(f"따옴 — {os.path.basename(path)}")
         self.view.set_document(doc)
         self._fill_thumbs()
         self._update_status()
