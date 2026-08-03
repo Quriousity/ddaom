@@ -4,8 +4,8 @@ from __future__ import annotations
 from PySide6.QtGui import QColor, QPalette
 
 # ---- 디자인 토큰 (tailwind zinc — 푸른기 없는 중성 그레이) ----
-BG = "#09090b"          # zinc-950 — 창 바닥
-SURFACE = "#18181b"     # zinc-900 — 툴바·패널
+BG = "#18181b"          # zinc-900 — 창 바닥 (950 은 너무 검다)
+SURFACE = "#18181b"     # 툴바·패널 — 바닥과 한 면, 경계는 헤어라인으로
 SURFACE_HI = "#27272a"  # zinc-800 — hover
 BORDER = "rgba(255,255,255,0.08)"
 TEXT = "#e4e4e7"        # zinc-200

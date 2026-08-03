@@ -100,7 +100,7 @@ class MainWindow(QMainWindow):
             "QListWidget { background: transparent; outline: none;"
             "  border-right: 1px solid rgba(128,128,128,70); }"
             "QListWidget::item { background: transparent; border: 2px solid transparent;"
-            "  margin: 4px; }"
+            "  margin: 6px 0px; }"  # 좌우 margin 0 — 가로 중앙은 그리드가 맡는다
             "QListWidget::item:selected { background: transparent;"
             "  border: 2px solid palette(highlight); border-radius: 3px; }")
         self.thumbs.currentRowChanged.connect(self._on_thumb_clicked)
