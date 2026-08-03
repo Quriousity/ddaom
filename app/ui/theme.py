@@ -58,6 +58,10 @@ QToolButton {{
 QToolButton:hover {{ background: {SURFACE_HI}; }}
 QToolButton:pressed {{ background: {ACCENT_DIM}; color: white; }}
 QToolButton:disabled {{ color: rgba(230,232,235,0.35); }}
+/* 접기/펴기 토글: 펴짐 = 눌린 상태감, 접힘 = 해제 상태감 */
+QToolButton[checkable="true"] {{ color: {TEXT_MUTED}; }}
+QToolButton:checked {{ background: {SURFACE_HI}; color: {TEXT};
+    border: 1px solid {BORDER}; }}
 QToolButton#danger:hover {{ background: {DANGER}; color: white; }}
 
 QStatusBar {{

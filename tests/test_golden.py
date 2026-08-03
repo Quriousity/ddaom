@@ -54,14 +54,14 @@ class TestTextLayer:
         text, source = extractor.extract_text(text_doc, 0, rect=rect)
         assert source == "text-layer"
         assert "1,234,567" in text
-        assert "김철수" not in text
+        assert "도길동" not in text
 
     def test_polygon_selection(self, text_doc):
         # 위쪽 두 줄을 덮는 폴리곤
         poly = [(60, 80), (500, 80), (500, 155), (60, 155)]
         text, source = extractor.extract_text(text_doc, 0, polygon=poly)
         assert source == "text-layer"
-        assert "김철수" in text
+        assert "도길동" in text
         assert "1,234,567" not in text
 
     def test_empty_region(self, text_doc):
@@ -77,7 +77,7 @@ class TestOCRFallback:
         rect = scan_doc.page_rect(0)
         text, source = extractor.extract_text(scan_doc, 0, rect=rect)
         assert source == "ocr"
-        assert "김철수" in text
+        assert "도길동" in text
         assert "123-45-67890" in text
         assert "1,234,567" in text.replace(" ", "")
 
@@ -96,7 +96,7 @@ class TestOCRFallback:
                 (900 * s, 330 * s), (140 * s, 330 * s)]
         text, source = extractor.extract_text(scan_doc, 0, polygon=poly)
         assert source == "ocr"
-        assert "김철수" in text
+        assert "도길동" in text
 
 
 # ---------- §8-3: 줌 배율과 무관한 좌표 ----------
@@ -133,10 +133,10 @@ class TestCoords:
                 assert line in text
             # 부분 선택: 단어 하나를 words 좌표로 집어 그 좌표로 다시 추출
             words = page.get_text("words")
-            target = next(w for w in words if "김철수" in w[4])
+            target = next(w for w in words if "도길동" in w[4])
             r = fitz.Rect(target[0] - 2, target[1] - 2, target[2] + 2, target[3] + 2)
             text2, _ = extractor.extract_text(d, 0, rect=r)
-            assert "김철수" in text2
+            assert "도길동" in text2
         finally:
             d.close()
 
@@ -162,7 +162,7 @@ class TestRedaction:
         assert "900101" not in d2[0].get_text()
         assert not d2.search_for("900101-1234567") if hasattr(d2, "search_for") else True
         # 나머지 내용은 살아있다
-        assert "김철수" in d2[0].get_text()
+        assert "도길동" in d2[0].get_text()
         # 메타데이터 0
         meta = {k: v for k, v in d2.metadata.items()
                 if v and k not in ("format", "encryption")}
@@ -183,7 +183,7 @@ class TestRedaction:
         try:
             text, _ = extractor.extract_text(d2, 0, rect=d2.page_rect(0))
             assert "900101" not in text.replace(" ", "")
-            assert "김철수" in text  # 다른 내용은 생존
+            assert "도길동" in text  # 다른 내용은 생존
         finally:
             d2.close()
 
@@ -269,7 +269,7 @@ class TestScanPageBoxes:
         boxes, source = extractor.scan_page_boxes(text_doc, 0)
         assert source == "text-layer"
         texts = [t for _, t in boxes]
-        assert any("김철수" in t for t in texts)
+        assert any("도길동" in t for t in texts)
         assert any("900101" in t for t in texts)
         # 폴리곤이 페이지 안에 있다
         pr = text_doc.page_rect(0)
@@ -281,9 +281,9 @@ class TestScanPageBoxes:
         boxes, source = extractor.scan_page_boxes(scan_doc, 0)
         assert source == "ocr"
         texts = [t for _, t in boxes]
-        assert any("김철수" in t for t in texts)
-        # 박스 좌표 역변환 검증: "김철수" 박스 위치를 글자층 PDF 로 재추출하면 같은 텍스트
-        poly, t = next((p, t) for p, t in boxes if "김철수" in t)
+        assert any("도길동" in t for t in texts)
+        # 박스 좌표 역변환 검증: "도길동" 박스 위치를 글자층 PDF 로 재추출하면 같은 텍스트
+        poly, t = next((p, t) for p, t in boxes if "도길동" in t)
         bbox = coords.polygon_bbox(poly)
         # 스캔본 150dpi 이미지에서 해당 줄 y=200 근처 -> pt 로 96 근처여야 한다
         assert 80 < bbox.y0 < 130, f"박스 y0={bbox.y0} — 좌표 역변환이 틀렸다"
@@ -305,7 +305,7 @@ class TestImageInput:
             assert d.is_image_source and d.page_count == 1
             boxes, source = extractor.scan_page_boxes(d, 0)
             assert source == "ocr"
-            assert any("김철수" in t for _, t in boxes)
+            assert any("도길동" in t for _, t in boxes)
         finally:
             d.close()
 
@@ -335,6 +335,6 @@ class TestImageInput:
         try:
             text, _ = extractor.extract_text(d2, 0, rect=d2.page_rect(0))
             assert "900101" not in text.replace(" ", "")
-            assert "김철수" in text  # 다른 내용 생존
+            assert "도길동" in text  # 다른 내용 생존
         finally:
             d2.close()

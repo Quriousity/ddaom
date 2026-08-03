@@ -122,7 +122,7 @@ class TestSmoke:
         assert infos and "OK" in infos[0]
         d2 = fitz.open(dst)
         assert "900101" not in d2[0].get_text()
-        assert "김철수" in d2[0].get_text()
+        assert "도길동" in d2[0].get_text()
         d2.close()
 
     def test_zoom_keeps_selection_coords(self, win, qapp):
@@ -149,10 +149,10 @@ class TestTextBoxes:
         items = [i for i in win.view.scene().items() if isinstance(i, TextBoxItem)]
         assert len(items) == len(boxes)
         # 클릭 복사 경로: 시그널 -> 클립보드
-        target = next(t for _, t in boxes if "김철수" in t)
+        target = next(t for _, t in boxes if "도길동" in t)
         win.view.textBoxClicked.emit(target)
         qapp.processEvents()
-        assert "김철수" in qapp.clipboard().text()
+        assert "도길동" in qapp.clipboard().text()
 
     def test_boxes_toggle(self, win, qapp):
         win.open_file(os.path.join(OUT, "text.pdf"))
@@ -167,7 +167,7 @@ class TestTextBoxes:
         _wait_pool(win, qapp)
         boxes = win.view.text_boxes.get(0)
         assert boxes
-        assert any("김철수" in t for _, t in boxes)
+        assert any("도길동" in t for _, t in boxes)
 
     def test_toggle_switch_wired(self, win, qapp):
         win.open_file(os.path.join(OUT, "text.pdf"))
@@ -229,11 +229,11 @@ class TestTray:
     def test_click_appends_to_tray(self, win, qapp):
         win.open_file(os.path.join(OUT, "text.pdf"))
         _wait_pool(win, qapp)
-        win.view.textBoxClicked.emit("세무사 김철수")
+        win.view.textBoxClicked.emit("사업자 도길동")
         win.view.textBoxClicked.emit("123-45-67890")
         qapp.processEvents()
         t = win.tray.toPlainText()
-        assert "세무사 김철수" in t and "123-45-67890" in t
+        assert "사업자 도길동" in t and "123-45-67890" in t
         # 전체 복사
         win._copy_tray()
         assert "123-45-67890" in qapp.clipboard().text()
