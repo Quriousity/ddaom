@@ -6,9 +6,11 @@ from PySide6.QtCore import (Property, QEasingCurve, QPropertyAnimation, QSize,
 from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import QAbstractButton
 
-_TRACK_ON = QColor(30, 160, 90)
-_TRACK_OFF = QColor(160, 160, 160)
-_KNOB = QColor(255, 255, 255)
+from .theme import ACCENT
+
+_TRACK_ON = QColor(ACCENT)          # 테마 액센트(인디고)와 통일
+_TRACK_OFF = QColor("#3f3f46")      # zinc-700
+_KNOB = QColor("#fafafa")
 
 
 class ToggleSwitch(QAbstractButton):
@@ -40,7 +42,7 @@ class ToggleSwitch(QAbstractButton):
     offset = Property(float, _get_offset, _set_offset)
 
     def sizeHint(self) -> QSize:
-        return QSize(44, 24)
+        return QSize(34, 18)  # 13px 폰트 라인하이트에 맞춘 크기
 
     def paintEvent(self, ev):
         p = QPainter(self)

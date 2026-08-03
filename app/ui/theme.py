@@ -3,20 +3,29 @@ from __future__ import annotations
 
 from PySide6.QtGui import QColor, QPalette
 
-# ---- 디자인 토큰 (tailwind 팔레트 발췌) ----
-BG = "#14161b"          # zinc-950 근처 — 창 바닥
-SURFACE = "#1c1f26"     # 툴바·패널
-SURFACE_HI = "#252932"  # hover
+# ---- 디자인 토큰 (tailwind zinc — 푸른기 없는 중성 그레이) ----
+BG = "#09090b"          # zinc-950 — 창 바닥
+SURFACE = "#18181b"     # zinc-900 — 툴바·패널
+SURFACE_HI = "#27272a"  # zinc-800 — hover
 BORDER = "rgba(255,255,255,0.08)"
-TEXT = "#e6e8eb"
-TEXT_MUTED = "#9aa1ab"
-ACCENT = "#3b82f6"      # blue-500
-ACCENT_DIM = "#2f6cd4"
+TEXT = "#e4e4e7"        # zinc-200
+TEXT_MUTED = "#a1a1aa"  # zinc-400
+ACCENT = "#6366f1"      # indigo-500 — 모던 웹 액센트 (토글·선택 강조 공용)
+ACCENT_DIM = "#4f46e5"  # indigo-600
 DANGER = "#ef4444"      # red-500
-OK = "#22c55e"          # green-500 (토글 스위치와 동일 계열)
+
+# 통일 폰트 (Windows: Segoe UI/맑은 고딕, macOS: 시스템 산세리프)
+FONT_STACK = '"Segoe UI", "Malgun Gothic", "Apple SD Gothic Neo", "Helvetica Neue", sans-serif'
+FONT_SIZE = "13px"
 
 QSS = f"""
-QMainWindow, QWidget {{ background: {BG}; color: {TEXT}; }}
+QWidget {{
+    background: {BG};
+    color: {TEXT};
+    font-family: {FONT_STACK};
+    font-size: {FONT_SIZE};
+    font-weight: 400;
+}}
 
 QToolBar {{
     background: {SURFACE};
@@ -26,7 +35,12 @@ QToolBar {{
     spacing: 4px;
 }}
 QToolBar QWidget {{ background: transparent; }}
-QToolBar QLabel {{ color: {TEXT_MUTED}; background: transparent; }}
+QToolBar QLabel {{
+    color: {TEXT_MUTED};
+    background: transparent;
+    font-size: {FONT_SIZE};
+    font-weight: 500;
+}}
 QToolBar::separator {{
     background: {BORDER};
     width: 1px;
@@ -38,6 +52,8 @@ QToolButton {{
     padding: 6px 12px;
     border-radius: 6px;
     border: none;
+    font-size: {FONT_SIZE};
+    font-weight: 500;
 }}
 QToolButton:hover {{ background: {SURFACE_HI}; }}
 QToolButton:pressed {{ background: {ACCENT_DIM}; color: white; }}
