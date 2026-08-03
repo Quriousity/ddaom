@@ -7,7 +7,3 @@ dist/
 .DS_Store
 exe-download/
 ddaom-source.zip
-
-# GitHub Actions 워크플로는 저장소에 올리지 않는다 (푸시 토큰에 workflow 권한 필요).
-# 되살리려면 이 두 줄을 지우고 토큰에 workflow 스코프를 준 뒤 커밋하면 된다.
-.github/

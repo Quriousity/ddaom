@@ -94,10 +94,6 @@ python3.11 -m venv .venv
 
 - **수동** (윈도우) — `pip install -r requirements.lock && pyinstaller app.spec`
 - **소스 묶음 만들기** (USB 전달용) — `./tools/make_source_zip.sh` → `ddaom-source.zip`
-- **GitHub Actions** — 워크플로 파일(`.github/workflows/build-windows.yml`)은 로컬에만 두고
-  저장소에는 올리지 않았다 (푸시 토큰에 `workflow` 스코프가 필요하기 때문).
-  쓰려면 토큰에 그 권한을 준 뒤 `.gitignore` 의 `.github/` 줄을 지우고 커밋하면 된다.
-  그러면 push 마다 윈도우 러너가 테스트 + 빌드해 `ddaom-win64.zip` 을 만들어준다.
 
 > ⚠ `requirements.lock` 은 macOS 에서 생성했다. 윈도우 첫 빌드가 실질적 검증이다 —
 > 실패하면 해당 패키지만 버전을 풀어 다시 고정한다.
@@ -119,35 +115,98 @@ tools/        make_samples.py(샘플 생성) · make_source_zip.sh
 
 ## 라이선스
 
-이 프로젝트는 **[GNU AGPL-3.0](./LICENSE)** 을 따릅니다.
+이 프로젝트는 **GNU Affero General Public License v3.0 (AGPL-3.0)** 을 따릅니다.
+전문은 [LICENSE](./LICENSE) 파일에 있으며, 아래 요약과 충돌하는 경우 **전문이 우선합니다.**
 
-### 요약 (정확한 내용은 [LICENSE](./LICENSE) 전문이 우선합니다)
+### 권한 · 조건 · 제한
 
-- **자유롭게 쓰고 고치고 배포할 수 있습니다.** 상업적 이용도 금지되지 않습니다.
-- **다만 배포하거나 네트워크 서비스로 제공하면, 고친 소스를 같은 AGPL-3.0 조건으로 공개해야 합니다.**
-  혼자 쓰거나 사내에서만 쓰는 것은 배포가 아니므로 공개 의무가 없습니다.
-- **제작자는 어떠한 보증도 하지 않으며, 사용으로 인한 손해에 법적 책임을 지지 않습니다.**
-  (AGPL-3.0 §15 무보증 · §16 책임 제한 — "AS IS")
-
-> ⚠ 이 프로그램은 **문서 내용을 되살릴 수 없게 파괴**하는 기능(`Ctrl+D`)을 포함합니다.
-> 원본을 덮어쓰지 않도록 설계했지만, **중요한 문서는 반드시 원본을 따로 보관한 뒤 사용하세요.**
-> 파괴 결과에 대한 책임은 사용자에게 있습니다.
-
-### 왜 AGPL 인가 — 구성요소 라이선스
-
-| 구성요소 | 라이선스 | 영향 |
+| ✅ 허용 | ⚠ 조건 | ❌ 제한 |
 |---|---|---|
-| **PyMuPDF** (PDF 처리·리댁션) | **AGPL-3.0** | 이것 때문에 **결합물 전체가 AGPL-3.0** 이 된다 |
-| **PySide6 / Qt** (화면) | LGPL-3.0 | 배포 시 라이브러리 교체 가능성 보장 필요 |
-| RapidOCR · PP-OCRv5 모델 | Apache-2.0 | 제약 없음 |
-| onnxruntime | MIT | 제약 없음 |
-| Pillow | MIT-CMU | 제약 없음 |
-| numpy | BSD-3-Clause | 제약 없음 |
-| PyInstaller | GPL + bootloader 예외 | 예외 조항 덕에 exe 배포에 제약 없음 |
+| 상업적 이용 | 소스 코드 공개 | 무보증 |
+| 수정 | 라이선스 및 저작권 고지 | 책임 제한 |
+| 배포 | 동일 라이선스로 배포 | |
+| 특허 이용 | 변경 사항 명시 | |
+| 사적 이용 | 네트워크 이용 시 소스 공개 | |
 
-**소스를 비공개로 배포해야 할 상황이 생기면** PyMuPDF 상용 라이선스를 구매하거나,
-`pypdfium2`(렌더·텍스트) + `pikepdf`(구조·메타데이터)로 교체해야 합니다.
-단 후자에는 진짜 파괴(redaction) 기능이 없어 직접 구현해야 합니다.
+- **혼자 쓰거나 사내에서만 쓰는 것은 배포가 아니므로** 소스 공개 의무가 없습니다.
+- **배포하거나 네트워크 서비스로 제공하면** 수정한 소스 전체를 AGPL-3.0 으로 공개해야 합니다.
+
+### 보증 및 책임의 부인
+
+본 소프트웨어는 **"있는 그대로(AS IS)"** 제공되며, 상품성이나 특정 목적 적합성을 포함한
+어떠한 명시적·묵시적 보증도 하지 않습니다. 저작권자는 본 소프트웨어의 사용 또는 사용 불능으로
+발생하는 어떠한 손해에 대해서도 책임을 지지 않습니다. (AGPL-3.0 §15 · §16)
+
+> ⚠ **데이터 파괴 기능 주의** — 본 프로그램은 문서 내용을 복구 불가능하게 파괴하는 기능(`Ctrl+D`)을
+> 포함합니다. 원본을 덮어쓰지 않도록 설계했으나, 중요한 문서는 **반드시 원본을 별도 보관한 뒤**
+> 사용하십시오. 파괴 결과에 대한 책임은 전적으로 사용자에게 있습니다.
+
+### 제3자 구성요소
+
+| 구성요소 | 용도 | 라이선스 |
+|---|---|---|
+| **PyMuPDF** | PDF 처리 · 리댁션 | **AGPL-3.0** — 이 프로젝트가 AGPL-3.0 인 이유 |
+| **PySide6 / Qt** | 화면 | LGPL-3.0 — 배포 시 라이브러리 교체 가능성 보장 필요 |
+| RapidOCR · PP-OCRv5 모델 | OCR | Apache-2.0 |
+| onnxruntime | OCR 추론 | MIT |
+| Pillow | 이미지 처리 | MIT-CMU |
+| numpy | 수치 연산 | BSD-3-Clause |
+| PyInstaller | exe 빌드 | GPL + bootloader 예외 (exe 배포 제약 없음) |
+
+소스를 비공개로 배포해야 할 경우, PyMuPDF 상용 라이선스를 구매하거나
+`pypdfium2`(렌더 · 텍스트) + `pikepdf`(구조 · 메타데이터)로 교체해야 합니다.
+단 후자에는 리댁션 기능이 없어 직접 구현해야 합니다.
+
+---
+
+## License
+
+This project is licensed under the **GNU Affero General Public License v3.0 (AGPL-3.0)**.
+The full text is in the [LICENSE](./LICENSE) file and **prevails over this summary**
+in case of any conflict.
+
+### Permissions · Conditions · Limitations
+
+| ✅ Permissions | ⚠ Conditions | ❌ Limitations |
+|---|---|---|
+| Commercial use | Disclose source | No warranty |
+| Modification | License and copyright notice | Limitation of liability |
+| Distribution | Same license | |
+| Patent use | State changes | |
+| Private use | Network use is distribution | |
+
+- **Personal or internal-only use is not distribution**, and carries no obligation to disclose source.
+- **If you distribute the software or provide it as a network service**, you must release your
+  complete modified source under the AGPL-3.0.
+
+### Disclaimer of Warranty and Liability
+
+This software is provided **"AS IS"**, without warranty of any kind, express or implied,
+including but not limited to the warranties of merchantability and fitness for a particular
+purpose. In no event shall the copyright holder be liable for any claim, damages or other
+liability arising from, out of or in connection with the software or the use or other dealings
+in the software. (AGPL-3.0 §15 and §16)
+
+> ⚠ **Destructive feature notice** — This program includes a function (`Ctrl+D`) that
+> irreversibly destroys document content. It never overwrites the original file by design,
+> but you should **always keep a separate backup** of important documents before use.
+> The user bears full responsibility for the results of redaction.
+
+### Third-Party Components
+
+| Component | Purpose | License |
+|---|---|---|
+| **PyMuPDF** | PDF processing · redaction | **AGPL-3.0** — the reason this project is AGPL-3.0 |
+| **PySide6 / Qt** | GUI | LGPL-3.0 — relinking must remain possible when distributed |
+| RapidOCR · PP-OCRv5 models | OCR | Apache-2.0 |
+| onnxruntime | OCR inference | MIT |
+| Pillow | Image processing | MIT-CMU |
+| numpy | Numerics | BSD-3-Clause |
+| PyInstaller | exe build | GPL with bootloader exception (no restriction on the built exe) |
+
+To distribute this software without disclosing source, you would need a commercial PyMuPDF
+license, or replace it with `pypdfium2` (rendering · text) + `pikepdf` (structure · metadata) —
+though the latter has no true redaction and would require implementing it yourself.
 
 ### License Notice
 
