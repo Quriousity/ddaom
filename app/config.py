@@ -32,6 +32,10 @@ LINE_GROUP_FACTOR = 0.6  # 라인 그룹핑 임계 = 평균 글자높이 * 이 �
 # --- 리댁션 ---
 REDACT_FILL_COLOR = (1, 1, 1)
 
+# --- 담은 목록 오버레이 (담긴 영역 표시 — 저장 전까지 아무것도 파괴하지 않는다) ---
+DELETE_REGION_PEN = (239, 68, 68, 200)   # red-500
+DELETE_REGION_FILL = (239, 68, 68, 70)
+
 # --- 렌더 캐시 ---
 PAGE_CACHE_SIZE = 8
 THUMB_WIDTH = 140

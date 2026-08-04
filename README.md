@@ -5,9 +5,10 @@ PDF·이미지에서 **원하는 글자만 집어서 복사**하는 윈도우 �
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](./LICENSE)
 
-- **글자 클릭 = 복사** — 문서를 열면 글자 영역을 자동 인식해 표시. 클릭하면 바로 클립보드로
-- **영역 지정 후 3가지** — ① 텍스트 복사 ② 이미지로 저장 ③ 그 영역을 지우고 새 파일 저장
-- **담은 텍스트** 패널에 모아서 고친 뒤 한 번에 복사
+- **글자 클릭 = 복사 + 담기** — 문서를 열면 글자 영역을 자동 인식해 표시. 클릭하면 바로 클립보드로 가고, 오른쪽 **담은 목록**에도 쌓입니다
+- **담은 것을 한 번에 파괴** — 여러 페이지를 오가며 담은 뒤 `담은 목록 파괴하고 원본형식으로 저장` 한 번으로 전부 지워 새 파일로 저장. 모드 전환은 없습니다
+- **영역 드래그 = 담기** — 글자로 인식되지 않은 도장·사진·표도 드래그 한 번으로 담깁니다
+- **현재 페이지를 통째로 이미지 저장** — 드래그 없이 `Ctrl+S`
 - 스캔 문서·사진도 OCR 로 읽는다 (RapidOCR + PP-OCRv5 한국어 모델 번들)
 
 ---
@@ -79,16 +80,19 @@ Control 이 48시간 안에 자동으로 꺼지게 되어 있습니다. 그런�
 
 | 조작 | 동작 |
 |---|---|
-| **글자 상자 클릭** | 그 줄을 바로 클립보드로 복사 |
-| **드래그** | 영역 지정 — 아래 세 가지를 할 수 있습니다 |
-| `Ctrl+C` | ① 선택 영역 텍스트 복사 |
-| `Ctrl+S` | ② 선택 영역을 이미지 파일로 저장 |
-| `Ctrl+D` | ③ 선택 영역을 **지운** 새 파일 저장 (되살릴 수 없게 파괴 + 문서 정보 제거) |
+| **글자 상자 클릭** | 그 줄을 클립보드로 복사 + **담은 목록**에 담기 |
+| **드래그** | 그 영역을 담은 목록에 넣기 (놓는 즉시. 인식 안 된 자리를 지울 때) |
+| `Ctrl+S` | **현재 페이지 이미지로 저장** — 드래그와 무관하게 페이지 통째로 |
+| **`담은 목록 파괴하고 원본형식으로 저장`** | 담은 목록을 **전부 지운** 새 파일 저장 (되살릴 수 없게 파괴 + 문서 정보 제거). 되돌릴 수 없어 단축키가 없습니다 |
+| **행의 `✕`** | 그 항목을 담은 목록에서 빼기 |
 | **우클릭 드래그** | 문서를 잡고 이동 |
 | `Ctrl+휠` / `Ctrl+0` | 확대·축소 / 화면에 맞추기 |
 | `↑` `↓` | 이전·다음 페이지 |
 | `T` | 글자 인식 표시 켜기/끄기 |
-| `[` `]` | 미리보기 / 담은 텍스트 패널 접기·펴기 |
+| `[` `]` | 미리보기 / 담은 목록 패널 접기·펴기 |
+
+**담은 목록에 있는 것이 곧 지워집니다.** 글자는 행에서 바로 고칠 수 있고(복사용),
+고쳐도 지워지는 위치는 담을 때 잡아둔 좌표 그대로입니다.
 
 **저장 파일 이름 규칙** (원본과 같은 폴더, 덮어쓰지 않음)
 - 이미지: `원본이름_p2_01.png`
@@ -107,7 +111,7 @@ Control 이 48시간 안에 자동으로 꺼지게 되어 있습니다. 그런�
 ```bash
 python3.11 -m venv .venv
 .venv/bin/pip install -r requirements.lock
-.venv/bin/python -m pytest tests/ -q     # 회귀 테스트 46개
+.venv/bin/python -m pytest tests/ -q     # 회귀 테스트
 .venv/bin/python run_app.py [파일경로]
 ```
 
@@ -158,7 +162,7 @@ tools/        make_samples.py(샘플 생성) · make_source_zip.sh
 어떠한 명시적·묵시적 보증도 하지 않습니다. 저작권자는 본 소프트웨어의 사용 또는 사용 불능으로
 발생하는 어떠한 손해에 대해서도 책임을 지지 않습니다. (AGPL-3.0 §15 · §16)
 
-> ⚠ **데이터 파괴 기능 주의** — 본 프로그램은 문서 내용을 복구 불가능하게 파괴하는 기능(`Ctrl+D`)을
+> ⚠ **데이터 파괴 기능 주의** — 본 프로그램은 문서 내용을 복구 불가능하게 파괴하는 기능(`담은 목록 파괴하고 원본형식으로 저장`)을
 > 포함합니다. 원본을 덮어쓰지 않도록 설계했으나, 중요한 문서는 **반드시 원본을 별도 보관한 뒤**
 > 사용하십시오. 파괴 결과에 대한 책임은 전적으로 사용자에게 있습니다.
 
@@ -208,7 +212,7 @@ purpose. In no event shall the copyright holder be liable for any claim, damages
 liability arising from, out of or in connection with the software or the use or other dealings
 in the software. (AGPL-3.0 §15 and §16)
 
-> ⚠ **Destructive feature notice** — This program includes a function (`Ctrl+D`) that
+> ⚠ **Destructive feature notice** — This program includes a function (destructive save) that
 > irreversibly destroys document content. It never overwrites the original file by design,
 > but you should **always keep a separate backup** of important documents before use.
 > The user bears full responsibility for the results of redaction.

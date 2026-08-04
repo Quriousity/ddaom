@@ -114,6 +114,55 @@ QPushButton {{
 QPushButton:hover {{ background: #2d323d; }}
 QPushButton:default {{ background: {ACCENT}; border-color: {ACCENT}; color: white; }}
 QPushButton:default:hover {{ background: {ACCENT_DIM}; }}
+/* 되돌릴 수 없는 실행 버튼 — 색으로 미리 경고한다 */
+QPushButton#danger {{
+    background: rgba(239,68,68,0.16);
+    border-color: rgba(239,68,68,0.45);
+    color: #fca5a5;                       /* red-300 */
+    font-weight: 600;
+}}
+QPushButton#danger:hover {{ background: {DANGER}; border-color: {DANGER}; color: white; }}
+QPushButton#danger:disabled {{
+    background: {SURFACE_HI};
+    border-color: {BORDER};
+    color: rgba(228,228,231,0.30);
+}}
+
+/* 담은 목록 — 여기 있는 것이 곧 파괴 대상이다 */
+#trayList {{
+    background: {SURFACE_HI};
+    border: 1px solid {BORDER};
+    border-radius: 8px;
+    padding: 4px;
+}}
+#trayList::item {{ border-radius: 4px; margin: 1px 0px; }}
+#trayList::item:hover {{ background: rgba(239,68,68,0.14); }}
+#trayBadge {{
+    color: {TEXT_MUTED};
+    font-size: 11px;
+    font-weight: 600;
+    background: transparent;
+}}
+#trayRowEdit {{
+    background: transparent;
+    border: none;
+    padding: 2px 0px;
+    color: {TEXT};
+    selection-background-color: {ACCENT};
+}}
+#trayRowEdit:focus {{ background: rgba(255,255,255,0.06); border-radius: 3px; }}
+#trayRowEdit[readOnly="true"] {{ color: {TEXT_MUTED}; }}
+#trayRemove {{
+    background: transparent;
+    border: none;
+    color: {TEXT_MUTED};
+    padding: 0px 4px;
+    font-size: 12px;
+    min-width: 0px;
+}}
+#trayRemove:hover {{ background: {DANGER}; color: white; border-radius: 3px; }}
+#trayHint {{ color: {TEXT_MUTED}; font-size: 12px; background: transparent; }}
+
 QLineEdit {{
     background: {BG};
     border: 1px solid {BORDER};

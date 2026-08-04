@@ -95,9 +95,21 @@ def point_in_polygon(x: float, y: float, pts: list[Point]) -> bool:
     return inside
 
 
+EMPTY = fitz.Rect(0, 0, 0, 0)
+
+
 def clamp_rect(rect: fitz.Rect, bounds: fitz.Rect) -> fitz.Rect:
-    """페이지 밖으로 나간 선택을 페이지 안으로 자른다."""
-    r = fitz.Rect(max(rect.x0, bounds.x0), max(rect.y0, bounds.y0),
-                  min(rect.x1, bounds.x1), min(rect.y1, bounds.y1))
-    r.normalize()
+    """페이지 밖으로 나간 선택을 페이지 안으로 자른다. 겹치는 곳이 없으면 빈 사각형.
+
+    ⚠ 자른 뒤에 normalize() 를 부르면 안 된다. 페이지 밖 선택은 자르고 나면
+    x0 > x1 이 되는데, normalize() 가 좌표를 맞바꿔 '페이지 안의 엉뚱한 사각형'으로
+    되살려 놓는다. 그 사각형은 아무것도 지우지 않으면서 검증은 통과한다
+    (지운 줄 알았는데 그대로인 파일이 저장된다 — 이 도구에서 가장 나쁜 실패다).
+    """
+    r = fitz.Rect(rect)
+    r.normalize()   # 뒤집어 그린 드래그를 바로잡는 건 자르기 '전'이다
+    r = fitz.Rect(max(r.x0, bounds.x0), max(r.y0, bounds.y0),
+                  min(r.x1, bounds.x1), min(r.y1, bounds.y1))
+    if r.x0 >= r.x1 or r.y0 >= r.y1:
+        return fitz.Rect(EMPTY)
     return r
