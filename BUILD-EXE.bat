@@ -28,8 +28,11 @@ if not errorlevel 1 (
     goto :got_python
 )
 
-python -c "import sys; raise SystemExit(0 if sys.version_info[:2] >= (3,11) else 1)" >nul 2>&1
-if not errorlevel 1 (
+REM Microsoft Store 앱 별칭(0바이트 스텁)은 출력이 없으므로 걸러진다
+REM 기본값 0 — 비어 있으면 %PYVER% 전개가 구문 오류를 낸다
+set "PYVER=0"
+for /f "delims=" %%v in ('python -c "import sys; print(sys.version_info[0]*100+sys.version_info[1])" 2^>nul') do set "PYVER=%%v"
+if %PYVER% GEQ 311 (
     set "PYCMD=python"
     goto :got_python
 )
