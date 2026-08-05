@@ -99,6 +99,8 @@ Control 이 48시간 안에 자동으로 꺼지게 되어 있습니다. 그런�
 | `Ctrl+S` | **현재 페이지 이미지로 저장** — 드래그와 무관하게 페이지 통째로 |
 | **`담은 목록 파괴하고 원본형식으로 저장`** | 담은 목록을 **전부 지운** 새 파일 저장 (되살릴 수 없게 파괴 + 문서 정보 제거). 되돌릴 수 없어 단축키가 없습니다 |
 | **행의 `✕`** | 그 항목을 담은 목록에서 빼기 |
+| **`전체 복사`** | 담은 글자를 줄바꿈으로 이어 클립보드로 (목록은 그대로 남습니다) |
+| **`전체 비우기`** | 담은 목록을 통째로 비우기 (파괴하지 않습니다) |
 | **우클릭 드래그** | 문서를 잡고 이동 |
 | `Ctrl+휠` / `Ctrl+0` | 확대·축소 / 화면에 맞추기 |
 | `↑` `↓` | 이전·다음 페이지 |
@@ -118,24 +120,50 @@ Control 이 48시간 안에 자동으로 꺼지게 되어 있습니다. 그런�
 
 ---
 
+## 잘 안 될 때 — 알려주세요
+
+빌드가 실패하거나, 글자가 인식되지 않거나, 파괴되지 않는 문서를 만나면
+**[GitHub Issues](https://github.com/Quriousity/ddaom/issues)** 에 남겨주세요.
+오류 메시지를 **그대로 캡처**해 주시면 원인을 찾기 훨씬 쉽습니다.
+
+> 🔒 **문서 자체는 올리지 마세요.** 이슈는 누구나 볼 수 있습니다. 민감한 내용이라면
+> 파일 대신 **증상과 오류 문구만** 적어주시면 됩니다. 필요하면 내용이 없는
+> 비슷한 문서를 따로 만들어 주세요.
+
+---
+
 ## 개발자용
 
-### 실행 (macOS / Windows)
+### 실행
 
 ```bash
+# macOS / Linux
 python3.11 -m venv .venv
 .venv/bin/pip install -r requirements.lock
 .venv/bin/python -m pytest tests/ -q     # 회귀 테스트
 .venv/bin/python run_app.py [파일경로]
 ```
 
+```bat
+REM 윈도우 (PowerShell / cmd)
+py -3.12 -m venv .venv
+.venv\Scripts\pip install -r requirements.lock
+.venv\Scripts\python -m pytest tests\ -q
+.venv\Scripts\python run_app.py [파일경로]
+```
+
 ### exe 빌드 다른 방법
 
-- **수동** (윈도우) — `pip install -r requirements.lock && pyinstaller app.spec`
+`BUILD-EXE.bat` 이 하는 일은 `app-onefile.spec` 으로 단일 exe 를 만들어 바탕화면에 두는 것이다.
+직접 부르려면:
+
+- **단일 파일** — `pyinstaller app-onefile.spec` → `dist\ddaom.exe`
+- **폴더 형태** — `pyinstaller app.spec` → `dist\ddaom\` — 기동이 빠르고 백신 오탐이 적다.
+  단일 파일이 백신·정책에 막힐 때의 대안이다
 - **소스 묶음 만들기** (USB 전달용) — `./tools/make_source_zip.sh` → `ddaom-source.zip`
 
-> ⚠ `requirements.lock` 은 macOS 에서 생성했다. 윈도우 첫 빌드가 실질적 검증이다 —
-> 실패하면 해당 패키지만 버전을 풀어 다시 고정한다.
+> `requirements.lock` 은 macOS 에서 생성했지만 **윈도우 11 + Python 3.12 에서 의존성 설치·
+> 테스트·exe 빌드를 확인했다.** 다른 환경에서 실패하면 해당 패키지만 버전을 풀어 다시 고정한다.
 
 ### 구조
 
@@ -148,7 +176,11 @@ tests/        골든 회귀 + UI 스모크. samples/ 는 결정적 생성물
 tools/        make_samples.py(샘플 생성) · make_source_zip.sh
 ```
 
-설계 근거와 함정은 [`staff-doc-tool-plan.md`](./staff-doc-tool-plan.md) 참고.
+설계 근거와 함정은 설계 문서 참고:
+
+- [`staff-doc-tool-plan.md`](./staff-doc-tool-plan.md) — 전체 설계와 명세
+- [`tray-destroy-plan.md`](./tray-destroy-plan.md) — 담은 목록으로 파괴 통합 (구현 완료)
+- [`image-ocr-plan.md`](./image-ocr-plan.md) — 그림 안 글자를 상자로 (설계만, 미구현)
 
 ---
 
@@ -188,9 +220,17 @@ tools/        make_samples.py(샘플 생성) · make_source_zip.sh
 | **PySide6 / Qt** | 화면 | LGPL-3.0 — 배포 시 라이브러리 교체 가능성 보장 필요 |
 | RapidOCR · PP-OCRv5 모델 | OCR | Apache-2.0 |
 | onnxruntime | OCR 추론 | MIT |
+| opencv-python | OCR 전처리 (RapidOCR 의존) | Apache-2.0 |
+| shapely | 검출 폴리곤 연산 (RapidOCR 의존) | BSD-3-Clause |
+| pyclipper | 폴리곤 오프셋 (RapidOCR 의존) | MIT |
+| protobuf | ONNX 모델 파싱 | BSD-3-Clause |
 | Pillow | 이미지 처리 | MIT-CMU |
 | numpy | 수치 연산 | BSD-3-Clause |
 | PyInstaller | exe 빌드 | GPL + bootloader 예외 (exe 배포 제약 없음) |
+
+그 밖에 exe 에 함께 들어가는 하위 의존성(PyYAML · flatbuffers · six · tqdm 등)은 모두
+MIT · BSD · Apache-2.0 · MPL-2.0 계열이라 AGPL-3.0 배포와 충돌하지 않습니다.
+전체 목록은 [`requirements.lock`](./requirements.lock) 에 있습니다.
 
 소스를 비공개로 배포해야 할 경우, PyMuPDF 상용 라이선스를 구매하거나
 `pypdfium2`(렌더 · 텍스트) + `pikepdf`(구조 · 메타데이터)로 교체해야 합니다.
@@ -239,9 +279,17 @@ in the software. (AGPL-3.0 §15 and §16)
 | **PySide6 / Qt** | GUI | LGPL-3.0 — relinking must remain possible when distributed |
 | RapidOCR · PP-OCRv5 models | OCR | Apache-2.0 |
 | onnxruntime | OCR inference | MIT |
+| opencv-python | OCR preprocessing (RapidOCR dependency) | Apache-2.0 |
+| shapely | Detection polygon ops (RapidOCR dependency) | BSD-3-Clause |
+| pyclipper | Polygon offsetting (RapidOCR dependency) | MIT |
+| protobuf | ONNX model parsing | BSD-3-Clause |
 | Pillow | Image processing | MIT-CMU |
 | numpy | Numerics | BSD-3-Clause |
 | PyInstaller | exe build | GPL with bootloader exception (no restriction on the built exe) |
+
+Other transitive dependencies bundled into the exe (PyYAML · flatbuffers · six · tqdm, etc.)
+are all MIT · BSD · Apache-2.0 · MPL-2.0, none of which conflict with AGPL-3.0 distribution.
+The full list is in [`requirements.lock`](./requirements.lock).
 
 To distribute this software without disclosing source, you would need a commercial PyMuPDF
 license, or replace it with `pypdfium2` (rendering · text) + `pikepdf` (structure · metadata) —

@@ -145,7 +145,8 @@ exit /b 0
 :fail
 echo.
 echo  ------------------------------------------
-echo   위의 오류 메시지를 그대로 캡처해서 문의하세요.
+echo   위의 오류 메시지를 그대로 캡처해서 알려주세요.
+echo   https://github.com/Quriousity/ddaom/issues
 echo  ------------------------------------------
 echo.
 pause
