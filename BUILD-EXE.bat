@@ -105,15 +105,20 @@ echo        OK
 echo.
 
 REM ============ 4. exe 만들기 ============
+REM 바탕화면 경로 — OneDrive 로 옮겨진 경우까지 잡으려면 셸에 물어봐야 한다
+set "DESKDIR=%USERPROFILE%\Desktop"
+for /f "delims=" %%d in ('powershell -NoProfile -Command "[Environment]::GetFolderPath('Desktop')" 2^>nul') do set "DESKDIR=%%d"
+if not exist "%DESKDIR%" set "DESKDIR=%CD%\dist"
+
 echo  [4/4] exe 만드는 중... (3~5분)
-"%VPY%" -m PyInstaller app.spec --noconfirm --log-level WARN
+"%VPY%" -m PyInstaller app-onefile.spec --noconfirm --log-level WARN --distpath "%DESKDIR%"
 if errorlevel 1 (
     echo.
     echo  [실패] exe 빌드에 실패했습니다.
     goto :fail
 )
 
-if not exist "dist\ddaom\ddaom.exe" (
+if not exist "%DESKDIR%\ddaom.exe" (
     echo.
     echo  [실패] exe 파일이 만들어지지 않았습니다.
     goto :fail
@@ -124,14 +129,15 @@ echo  ============================================
 echo    완성됐습니다!
 echo  ============================================
 echo.
-echo    dist\ddaom\ddaom.exe
+echo    %DESKDIR%\ddaom.exe
 echo.
-echo    이 폴더(dist\ddaom)를 통째로 원하는 곳에 복사해서 쓰세요.
+echo    파일 하나로 끝입니다. 원하는 곳에 복사해서 쓰세요.
 echo    ddaom.exe 를 더블클릭하면 실행됩니다.
+echo    (첫 화면이 뜨기까지 10~30초 걸립니다 - 정상입니다)
 echo.
 echo    (탐색기를 열어 드립니다)
 echo.
-start "" explorer "%CD%\dist\ddaom"
+start "" explorer /select,"%DESKDIR%\ddaom.exe"
 echo  아무 키나 누르면 창이 닫힙니다.
 pause >nul
 exit /b 0
