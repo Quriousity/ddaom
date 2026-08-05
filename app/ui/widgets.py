@@ -2,12 +2,32 @@
 from __future__ import annotations
 
 from PySide6.QtCore import (Property, QEasingCurve, QEvent, QPropertyAnimation,
-                            QSize, Qt, Signal)
+                            QRect, QSize, Qt, Signal)
 from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import (QAbstractButton, QHBoxLayout, QLabel, QLineEdit,
                                QToolButton, QWidget)
 
+from .. import config
 from .theme import ACCENT
+
+
+def startup_geometry(available: QRect) -> QRect:
+    """작업영역의 일정 비율 크기를 그 안 중앙에 놓은 사각형.
+
+    available 은 screen.availableGeometry() — 작업표시줄을 뺀 영역이고,
+    보조 모니터에서는 원점이 (0,0) 이 아니다(음수일 수도 있다). 그래서
+    중앙 계산에 available.x()/y() 를 반드시 더한다.
+    """
+    def span(full: int, floor: int) -> int:
+        # 하한을 먼저 걸고 화면 크기로 다시 자른다. 순서가 바뀌면
+        # 작은 화면에서 하한이 이겨서 창이 화면 밖으로 나간다.
+        return min(max(int(full * config.WINDOW_SCREEN_RATIO), floor), full)
+
+    w = span(available.width(), config.WINDOW_MIN_W)
+    h = span(available.height(), config.WINDOW_MIN_H)
+    return QRect(available.x() + (available.width() - w) // 2,
+                 available.y() + (available.height() - h) // 2,
+                 w, h)
 
 _TRACK_ON = QColor(ACCENT)          # 테마 액센트(인디고)와 통일
 _TRACK_OFF = QColor("#3f3f46")      # zinc-700

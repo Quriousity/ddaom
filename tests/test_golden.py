@@ -268,6 +268,36 @@ class TestRedaction:
                 assert f"{i:02d} row 900101" not in text
             assert text.count("900101") <= 31
 
+    def test_edge_blend_is_not_reported_as_leftover(self, tmp_path):
+        """어두운 바탕 위를 파괴하면 표본 테두리가 바탕색과 섞인다 — 잔존이 아니다.
+
+        표본의 바깥 한 겹은 사각형 경계에 걸쳐 있어 언제나 바깥 색이 섞여 든다.
+        그걸 세면 영역이 작을수록 테두리 비율이 커져 제대로 덮인 영역이 실패로
+        뜬다 (실제 문서 1쪽에서 걸린 352개가 전부 테두리 한 겹이었다).
+        """
+        src = str(tmp_path / "dark.pdf")
+        doc = fitz.open()
+        page = doc.new_page(width=300, height=200)
+        # 바탕은 이미지여야 한다 — 도형으로 그리면 리댁션이 통째로 걷어내서
+        # (LINE_ART_REMOVE_IF_TOUCHED) 경계에 섞일 바깥이 남지 않는다
+        pm = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 300, 200), False)
+        pm.set_rect(pm.irect, (25, 25, 40))
+        page.insert_image(page.rect, pixmap=pm)
+        page.insert_text((40, 100), "SECRET", fontsize=14, color=(1, 1, 1))
+        doc.save(src)
+        doc.close()
+
+        d = fitz.open(src)
+        word = next(w for w in d[0].get_text("words") if "SECRET" in w[4])
+        d.close()
+
+        dst = str(tmp_path / "dark_out.pdf")
+        report = redactor.redact(src, {0: [fitz.Rect(word[:4])]}, dst)
+        assert report.ok, f"테두리 섞임을 잔존으로 셌다: {report.summary()}"
+        d2 = fitz.open(dst)
+        assert "SECRET" not in d2[0].get_text()
+        d2.close()
+
     def test_real_leftover_still_caught(self):
         """오탐을 줄이면서 진짜 잔존을 놓치면 최악이다 — 파괴 안 한 영역은 잡혀야 한다."""
         src = os.path.join(SAMPLES, "text.pdf")

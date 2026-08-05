@@ -111,6 +111,64 @@ def grant_write(dir_path: str) -> None:
         raise PermissionError(f"권한을 바꿨지만 여전히 쓸 수 없습니다:\n{dir_path}")
 
 
+def _lib(step: str, fn, *args, **kwargs):
+    """PyMuPDF 호출 한 단계 — 라이브러리 원문 오류를 사람이 읽을 문장으로 바꾼다.
+
+    원문만 띄우면(예: "code=7: cannot find object in xref (359 0 R)") 사용자는
+    무엇이 실패했는지도, 파일이 저장됐는지도 알 수 없다. 단계 이름과 저장 여부를
+    붙이고 원문은 문의용으로 괄호에 남긴다 (_save 와 같은 방식).
+    """
+    try:
+        return fn(*args, **kwargs)
+    except Exception as e:
+        raise RuntimeError(
+            f"{step} 단계에서 문서를 처리하지 못했습니다 — 아무것도 저장하지 않았습니다.\n\n"
+            f"이 프로그램이 다루지 못하는 형태의 PDF 일 수 있습니다.\n"
+            f"(원인: {e})") from e
+
+
+def _scrub(doc):
+    """잔여정보 일괄 정리(첨부·JS·폼필드·주석·XMP). 실패하면 한 번만 고쳐 재시도한다.
+
+    scrub() 은 xref 를 1번부터 xref_length()-1 까지 훑으며 모든 번호의 객체를 읽는데,
+    표에 실리지 않은 번호가 있으면 거기서 죽는다. trailer /Size 는 크게 적어놓고
+    xref 구획에서는 일부 번호를 빼먹은 PDF 가 실제로 돌아다닌다. 보기·인쇄에는
+    지장이 없어서 사용자에게는 멀쩡한 문서다 — 파괴만 못 하면 곤란하다.
+
+    고치는 방법은 문서를 한 번 다시 쓰는 것이다. 디스크가 아니라 메모리에서 한다 —
+    파괴 전 원본을 임시 파일로 떨구면 그것 자체가 유출이다.
+
+    건너뛰지는 않는다: scrub() 은 JS·첨부파일·폼필드를 지우는 실제 파괴 작업이라
+    생략하면 잔여물이 남은 파일이 OK 로 저장된다.
+    """
+    try:
+        doc.scrub()
+        return doc
+    except RuntimeError:
+        pass
+    buf = _lib("문서 정리", doc.tobytes, garbage=3, clean=True, deflate=True,
+               encryption=fitz.PDF_ENCRYPT_NONE)
+    fresh = fitz.open("pdf", buf)
+    try:
+        _lib("잔여정보 제거", fresh.scrub)
+    except Exception:
+        fresh.close()
+        raise
+    doc.close()   # 새 문서가 자리 잡은 뒤에 닫는다 (실패했다면 부르는 쪽이 원본을 닫는다)
+    return fresh
+
+
+def _strip_extras(doc) -> None:
+    """리댁션 뒤 정리 — 남은 주석·링크와 메타데이터·XMP."""
+    for page in doc:
+        for annot in list(page.annots() or []):
+            page.delete_annot(annot)
+        for link in list(page.get_links()):
+            page.delete_link(link)
+    doc.set_metadata({})
+    doc.del_xml_metadata()
+
+
 def _save(doc, dst_path: str, **kw) -> None:
     """PyMuPDF 는 저장 실패를 메시지 없는 예외로 흘리기도 한다 (FzErrorSystem
     생성 자체가 TypeError 로 터진다). 무슨 일이 있어도 읽을 수 있는 오류로 바꾼다."""
@@ -178,7 +236,8 @@ def _apply(page, rects: list[fitz.Rect], fill: tuple) -> None:
     """한 페이지의 리댁션 — 주석을 달고 apply_redactions 는 한 번만 (§9)."""
     for r in rects:
         page.add_redact_annot(_annot_rect(page, r), fill=fill)
-    applied = page.apply_redactions(
+    applied = _lib(
+        f"{page.number + 1}쪽 파괴", page.apply_redactions,
         images=fitz.PDF_REDACT_IMAGE_PIXELS,       # 스캔본 파괴의 핵심
         graphics=fitz.PDF_REDACT_LINE_ART_REMOVE_IF_TOUCHED,
         text=fitz.PDF_REDACT_TEXT_REMOVE,
@@ -245,12 +304,17 @@ def _unfilled(page, rect: fitz.Rect, fill: tuple) -> str:
     if clip.is_empty:
         return ""
     sample = page.get_pixmap(clip=clip, dpi=36, alpha=False)
-    n = sample.width * sample.height
+    w, h = sample.width, sample.height
+    # 표본의 바깥 한 겹은 사각형 경계에 걸쳐 있어 바깥 내용과 섞인다. 문서에 남은
+    # 것이 아니라 렌더링 경계라서, 온전히 영역 안에 있는 픽셀만 센다. 이걸 세면
+    # 제대로 덮인 영역이 테두리만으로 2% 를 넘겨 실패로 뜬다 (작은 영역일수록 심하다).
+    x0, y0, x1, y1 = (1, 1, w - 1, h - 1) if w > 2 and h > 2 else (0, 0, w, h)
+    n = (x1 - x0) * (y1 - y0)
     if n == 0:
         return ""
     expect = tuple(int(c * 255) for c in fill)
-    bad = sum(1 for i in range(n)
-              if sample.pixel(i % sample.width, i // sample.width) != expect)
+    bad = sum(1 for y in range(y0, y1) for x in range(x0, x1)
+              if sample.pixel(x, y) != expect)
     if bad > n * 0.02:   # 2% 초과로 fill 색이 아니면 실패
         return f"{bad}/{n}"
     return ""
@@ -297,21 +361,15 @@ def redact(src_path: str, selections: dict[int, list[Selection]], dst_path: str,
         rect_map = _plan(doc, selections)
 
         # 2) 잔여정보 일괄 정리 (첨부·JS·폼필드·주석·XMP 등)
-        doc.scrub()
+        doc = _scrub(doc)   # 문서가 바뀔 수 있다 — 아래는 새 문서를 쓴다
 
         # 3) 리댁션 — 페이지당 apply_redactions 는 한 번만 (§9)
         for page_no, rects in rect_map.items():
             _apply(doc[page_no], rects, fill)
 
         # 4) 남은 주석·링크 제거 + 메타데이터 제거
-        for page in doc:
-            for annot in list(page.annots() or []):
-                page.delete_annot(annot)
-            for link in list(page.get_links()):
-                page.delete_link(link)
-        doc.set_metadata({})
-        doc.del_xml_metadata()
-        removed = _strip_traces(doc)   # 책갈피·PieceInfo — scrub() 이 놓치는 것들
+        _lib("주석·메타데이터 제거", _strip_extras, doc)
+        removed = _lib("흔적 제거", _strip_traces, doc)  # scrub() 이 놓치는 것들
 
         # 5) 새 파일 저장 — 증분 저장하면 원본이 파일 안에 남는다
         _save(doc, dst_path, garbage=4, clean=True, deflate=True,
@@ -319,7 +377,14 @@ def redact(src_path: str, selections: dict[int, list[Selection]], dst_path: str,
     finally:
         doc.close()
 
-    return _verify(dst_path, rect_map, fill, removed)
+    # 여기서부터는 파일이 이미 디스크에 있다 — 실패해도 '저장 안 됨' 이라고 하면 안 된다
+    try:
+        return _verify(dst_path, rect_map, fill, removed)
+    except Exception as e:
+        raise RuntimeError(
+            f"파괴한 파일은 저장됐지만 검증하지 못했습니다.\n\n{dst_path}\n\n"
+            f"제대로 파괴됐는지 확인되지 않았습니다 — 파일을 직접 열어 확인하세요.\n"
+            f"(원인: {e})") from e
 
 
 def redact_image(src_path: str, selections: dict[int, list[Selection]],

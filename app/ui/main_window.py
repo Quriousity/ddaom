@@ -17,7 +17,8 @@ from dataclasses import dataclass
 import fitz
 from PySide6.QtCore import (QObject, QRunnable, QSize, Qt, QThreadPool, QTimer,
                             Signal, Slot)
-from PySide6.QtGui import QAction, QIcon, QImage, QKeySequence, QPixmap
+from PySide6.QtGui import (QAction, QCursor, QGuiApplication, QIcon, QImage,
+                           QKeySequence, QPixmap)
 from PySide6.QtWidgets import (QFileDialog, QHBoxLayout, QInputDialog, QLabel,
                                QListWidget, QListWidgetItem, QMainWindow,
                                QMessageBox, QPushButton, QSizePolicy, QToolBar,
@@ -28,7 +29,7 @@ from ..core import capability, clipboard, coords, extractor, redactor
 from ..core.document import BadPassword, Document, NeedsPassword
 from ..core.ocr_engine import default_engine
 from .pdf_view import PdfView
-from .widgets import ToggleSwitch, TrayRow
+from .widgets import ToggleSwitch, TrayRow, startup_geometry
 
 
 class _Worker(QRunnable):
@@ -125,7 +126,10 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("따옴")
-        self.resize(1280, 860)
+        # 커서가 있는 모니터에 띄운다 (멀티모니터에서 보고 있던 화면이 맞다)
+        screen = (QGuiApplication.screenAt(QCursor.pos())
+                  or QGuiApplication.primaryScreen())
+        self.setGeometry(startup_geometry(screen.availableGeometry()))
 
         self.doc: Document | None = None
         self.doc_path: str | None = None
@@ -722,11 +726,21 @@ class MainWindow(QMainWindow):
         self._set_ocr_status("준비됨")
         self._refresh_tray()  # 실패해도 목록은 남는다 → 저장 버튼을 되살린다
         exc, tb = err if isinstance(err, tuple) else (None, str(err))
-        # 파괴를 스스로 멈춘 경우 — 저장된 건 없다. 사용자에게 그 문장을 그대로 보인다
+        # 파괴를 스스로 멈춘 경우 — 사용자에게 그 문장을 그대로 보인다.
+        # 라이브러리 오류를 감싼 것(raise ... from e)이면 추적도 접어서 함께 준다:
+        # 그쪽은 우리가 예상한 실패가 아니라 문의로 이어질 일이다.
         if isinstance(exc, (ValueError, RuntimeError, OSError)):
-            QMessageBox.critical(self, "파괴하지 못했습니다", str(exc))
+            self._show_destroy_error(str(exc), tb if exc.__cause__ else None)
             return
         QMessageBox.critical(self, "오류", tb[-1500:])
+
+    def _show_destroy_error(self, text: str, detail: str | None) -> None:
+        """파괴 실패 알림. detail 이 있으면 '자세히'로 접어 둔다."""
+        box = QMessageBox(QMessageBox.Critical, "파괴하지 못했습니다", text,
+                          QMessageBox.Ok, self)
+        if detail:
+            box.setDetailedText(detail)
+        box.exec()
 
     def closeEvent(self, ev):
         if not self._confirm_discard("앱을 닫으면 "):

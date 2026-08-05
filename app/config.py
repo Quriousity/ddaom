@@ -36,6 +36,11 @@ REDACT_FILL_COLOR = (1, 1, 1)
 DELETE_REGION_PEN = (239, 68, 68, 200)   # red-500
 DELETE_REGION_FILL = (239, 68, 68, 70)
 
+# --- 창 기동 크기 (매 실행 같은 크기로 뜬다. 이전 크기를 기억하지 않는다) ---
+WINDOW_SCREEN_RATIO = 0.8   # 작업영역(작업표시줄 제외) 대비
+WINDOW_MIN_W = 900          # 기동 크기의 하한 — 사용자가 손으로 더 줄이는 건 자유다
+WINDOW_MIN_H = 600
+
 # --- 렌더 캐시 ---
 PAGE_CACHE_SIZE = 8
 THUMB_WIDTH = 140
