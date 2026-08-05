@@ -28,21 +28,39 @@ class RedactionReport:
     ok: bool
     dst_path: str
     pages_redacted: int
-    leftover_text: dict[int, str] = field(default_factory=dict)  # page_no -> 남은 텍스트
+    # 잔존 사유는 종류별로 나눠 담는다 — 글자가 남은 것과 픽셀이 안 덮인 것은
+    # 원인도 대응도 다르다. 한 자루에 섞으면 픽셀 문제가 '잔여 텍스트'로 보고된다.
+    leftover_text: dict[int, list[str]] = field(default_factory=dict)    # page_no -> 남은 글자
+    leftover_pixels: dict[int, list[str]] = field(default_factory=dict)  # page_no -> "224/224"
     metadata_left: dict = field(default_factory=dict)
     xmp_left: bool = False
+    traces_left: dict[str, int] = field(default_factory=dict)     # 이름 -> 남은 개수
+    traces_removed: dict[str, int] = field(default_factory=dict)  # 이름 -> 지운 개수
 
     def summary(self) -> str:
         if self.ok:
-            return (f"OK — {self.pages_redacted}개 페이지 리댁션, "
-                    f"잔여 텍스트 0건, 메타데이터 없음\n→ {self.dst_path}")
+            head = (f"OK — {self.pages_redacted}개 페이지 리댁션, "
+                    f"잔여 텍스트 0건, 메타데이터 없음")
+            # 무엇을 함께 잃었는지 알린다 — 조용히 사라지는 게 제일 나쁘다
+            if self.traces_removed:
+                head += "\n함께 제거됨: " + ", ".join(
+                    f"{k} {v}개" for k, v in sorted(self.traces_removed.items()))
+            return f"{head}\n→ {self.dst_path}"
         parts = []
         if self.leftover_text:
-            parts.append(f"⚠ 잔여 텍스트 발견: {self.leftover_text}")
+            parts.append("⚠ 파괴 영역에 글자가 남았습니다:")
+            for page_no, items in sorted(self.leftover_text.items()):
+                parts.append(f"  · {page_no + 1}쪽 — " + " / ".join(items))
+        if self.leftover_pixels:
+            parts.append("⚠ 파괴 영역이 덮이지 않았습니다 (덮이지 않은 픽셀/전체):")
+            for page_no, items in sorted(self.leftover_pixels.items()):
+                parts.append(f"  · {page_no + 1}쪽 — " + ", ".join(items))
         if self.metadata_left:
             parts.append(f"⚠ 메타데이터 잔존: {self.metadata_left}")
         if self.xmp_left:
             parts.append("⚠ XMP 잔존")
+        for name, n in sorted(self.traces_left.items()):
+            parts.append(f"⚠ {name} 잔존: {n}개")
         return "\n".join(parts) or "⚠ 알 수 없는 실패"
 
 
@@ -140,8 +158,89 @@ def _plan(doc, selections: dict[int, list[Selection]]) -> dict[int, list[fitz.Re
     return plan
 
 
-def _fill_leftover(page, rect: fitz.Rect, fill: tuple) -> str:
-    """파괴 영역이 fill 색으로 덮였는가 — 글자층이 없는 스캔본은 이것만이 증거다."""
+def _annot_rect(page, rect: fitz.Rect) -> fitz.Rect:
+    """표시 좌표 -> 주석 좌표. 회전된 페이지에서만 실제로 달라진다.
+
+    page.rect·get_pixmap·get_text 는 /Rotate 를 반영한 '보이는 대로'의 좌표를 쓰지만,
+    주석은 회전 전 좌표로 들어간다. 화면에서 고른 사각형을 그대로 넣으면 엉뚱한 데가
+    파괴된다 (180도면 정확히 반대편, 90/270도면 가로세로가 뒤바뀐 자리).
+
+    검증은 표시 좌표 그대로 봐야 하므로 변환은 주석을 다는 이 순간에만 한다.
+    """
+    if not page.rotation:
+        return rect
+    r = fitz.Rect(rect) * page.derotation_matrix
+    r.normalize()
+    return r
+
+
+def _apply(page, rects: list[fitz.Rect], fill: tuple) -> None:
+    """한 페이지의 리댁션 — 주석을 달고 apply_redactions 는 한 번만 (§9)."""
+    for r in rects:
+        page.add_redact_annot(_annot_rect(page, r), fill=fill)
+    applied = page.apply_redactions(
+        images=fitz.PDF_REDACT_IMAGE_PIXELS,       # 스캔본 파괴의 핵심
+        graphics=fitz.PDF_REDACT_LINE_ART_REMOVE_IF_TOUCHED,
+        text=fitz.PDF_REDACT_TEXT_REMOVE,
+    )
+    if applied is False:   # 무동작을 조용히 넘기지 않는다
+        raise RuntimeError(
+            f"{page.number + 1}쪽 리댁션이 적용되지 않았습니다 — 저장하지 않았습니다.")
+
+
+def _pieceinfo_xrefs(doc) -> list[int]:
+    """/PieceInfo 를 가진 객체 전부. 카탈로그·페이지뿐 아니라 폼 XObject 에도 붙는다.
+
+    범위를 좁히면 청소가 닿지 않은 곳을 검증이 잡아 사용자가 손쓸 수 없는 실패가
+    난다 — 청소와 검증은 같은 범위를 봐야 한다.
+    """
+    out = []
+    for xref in range(1, doc.xref_length()):
+        try:
+            if doc.xref_get_key(xref, "PieceInfo")[0] != "null":
+                out.append(xref)
+        except Exception:
+            continue   # 해제된 xref 등 — 읽을 수 없으면 가진 것도 없다
+    return out
+
+
+def _strip_traces(doc) -> dict[str, int]:
+    """scrub() 도 garbage=4 도 걷어내지 못하는 흔적을 지우고, 지운 개수를 돌려준다.
+
+    - 책갈피(Outlines): 제목에 이름이 들어가는 일이 흔한데 scrub() 대상이 아니다.
+    - /PieceInfo: 편집 프로그램의 비공개 데이터. 참조가 살아 있어 garbage 수집을
+      피해 간다. 콘텐츠 스트림이 참조하지 않으므로 지워도 렌더는 그대로다.
+    """
+    removed: dict[str, int] = {}
+    n = len(doc.get_toc(simple=True))
+    if n:
+        doc.set_toc([])
+        removed["책갈피"] = n
+    xrefs = _pieceinfo_xrefs(doc)
+    for xref in xrefs:
+        doc.xref_set_key(xref, "PieceInfo", "null")
+    if xrefs:
+        removed["PieceInfo"] = len(xrefs)
+    return removed
+
+
+def _leftover_traces(doc) -> dict[str, int]:
+    """_strip_traces 가 지웠어야 할 것이 저장본에 남았는가 (같은 범위로 본다)."""
+    left: dict[str, int] = {}
+    n = len(doc.get_toc(simple=True))
+    if n:
+        left["책갈피"] = n
+    n = len(_pieceinfo_xrefs(doc))
+    if n:
+        left["PieceInfo"] = n
+    return left
+
+
+def _unfilled(page, rect: fitz.Rect, fill: tuple) -> str:
+    """파괴 영역이 fill 색으로 덮였는가 — 글자층이 없는 스캔본은 이것만이 증거다.
+
+    덮이지 않았으면 "224/224" 꼴로, 덮였으면 빈 문자열.
+    """
     clip = coords.clamp_rect(fitz.Rect(rect), page.rect)
     if clip.is_empty:
         return ""
@@ -153,8 +252,32 @@ def _fill_leftover(page, rect: fitz.Rect, fill: tuple) -> str:
     bad = sum(1 for i in range(n)
               if sample.pixel(i % sample.width, i // sample.width) != expect)
     if bad > n * 0.02:   # 2% 초과로 fill 색이 아니면 실패
-        return f"파괴 영역에 원본 픽셀 잔존 의심 ({bad}/{n})"
+        return f"{bad}/{n}"
     return ""
+
+
+def _leftover_text(page, rect: fitz.Rect) -> str:
+    """파괴 영역에 남은 글자. 스치기만 한 이웃 줄은 세지 않는다.
+
+    get_text(clip=…) 은 사각형에 조금이라도 걸친 글자를 다 돌려주는데,
+    apply_redactions 는 그런 글자를 지우지 않는다. 검증이 파괴보다 엄격하면
+    제대로 지워진 문서가 실패로 뜬다 — 줄 간격이 촘촘한 표에서 특히 그렇다.
+
+    글자 중심이 영역 안에 있는 것만 잔존으로 본다 (단어 판정과 같은 규칙, §4.3).
+    파괴 대상이었던 글자는 통째로 영역 안이므로 이 규칙으로 빠져나가지 못한다.
+    """
+    out: list[str] = []
+    d = page.get_text("rawdict", clip=rect)
+    for block in d.get("blocks", []):
+        if block.get("type") != 0:   # 이미지 블록은 픽셀 검사가 맡는다
+            continue
+        for line in block.get("lines", []):
+            for span in line.get("spans", []):
+                for ch in span.get("chars", []):
+                    x0, y0, x1, y1 = ch["bbox"]
+                    if rect.contains(fitz.Point((x0 + x1) / 2, (y0 + y1) / 2)):
+                        out.append(ch["c"])
+    return "".join(out).strip()
 
 
 def redact(src_path: str, selections: dict[int, list[Selection]], dst_path: str,
@@ -178,17 +301,7 @@ def redact(src_path: str, selections: dict[int, list[Selection]], dst_path: str,
 
         # 3) 리댁션 — 페이지당 apply_redactions 는 한 번만 (§9)
         for page_no, rects in rect_map.items():
-            page = doc[page_no]
-            for r in rects:
-                page.add_redact_annot(r, fill=fill)
-            applied = page.apply_redactions(
-                images=fitz.PDF_REDACT_IMAGE_PIXELS,       # 스캔본 파괴의 핵심
-                graphics=fitz.PDF_REDACT_LINE_ART_REMOVE_IF_TOUCHED,
-                text=fitz.PDF_REDACT_TEXT_REMOVE,
-            )
-            if applied is False:   # 무동작을 조용히 넘기지 않는다
-                raise RuntimeError(
-                    f"{page_no + 1}쪽 리댁션이 적용되지 않았습니다 — 저장하지 않았습니다.")
+            _apply(doc[page_no], rects, fill)
 
         # 4) 남은 주석·링크 제거 + 메타데이터 제거
         for page in doc:
@@ -198,6 +311,7 @@ def redact(src_path: str, selections: dict[int, list[Selection]], dst_path: str,
                 page.delete_link(link)
         doc.set_metadata({})
         doc.del_xml_metadata()
+        removed = _strip_traces(doc)   # 책갈피·PieceInfo — scrub() 이 놓치는 것들
 
         # 5) 새 파일 저장 — 증분 저장하면 원본이 파일 안에 남는다
         _save(doc, dst_path, garbage=4, clean=True, deflate=True,
@@ -205,7 +319,7 @@ def redact(src_path: str, selections: dict[int, list[Selection]], dst_path: str,
     finally:
         doc.close()
 
-    return _verify(dst_path, rect_map, fill)
+    return _verify(dst_path, rect_map, fill, removed)
 
 
 def redact_image(src_path: str, selections: dict[int, list[Selection]],
@@ -226,16 +340,7 @@ def redact_image(src_path: str, selections: dict[int, list[Selection]],
     try:
         rect_map = _plan(doc, selections)
         for page_no, rects in rect_map.items():
-            page = doc[page_no]
-            for r in rects:
-                page.add_redact_annot(r, fill=fill)
-            applied = page.apply_redactions(
-                images=fitz.PDF_REDACT_IMAGE_PIXELS,
-                graphics=fitz.PDF_REDACT_LINE_ART_REMOVE_IF_TOUCHED,
-                text=fitz.PDF_REDACT_TEXT_REMOVE)
-            if applied is False:
-                raise RuntimeError(
-                    f"{page_no + 1}쪽 리댁션이 적용되지 않았습니다 — 저장하지 않았습니다.")
+            _apply(doc[page_no], rects, fill)
         # 원본 픽셀 해상도로 재렌더 (이미지 dpi 메타데이터에 따라 pt/px 비율이 다르다)
         src_pix = fitz.Pixmap(src_path)
         out_dpi = max(1, round(72 * src_pix.width / doc[0].rect.width))
@@ -248,36 +353,39 @@ def redact_image(src_path: str, selections: dict[int, list[Selection]],
     # 검증: 결과를 다시 열어 파괴 영역이 fill 색으로 칠해졌는지 확인
     out = fitz.open(dst_path)
     try:
-        leftover: dict[int, str] = {}
+        unfilled: dict[int, list[str]] = {}
         page = out[0]
         for r in rect_map.get(0, []):
-            msg = _fill_leftover(page, r, fill)
-            if msg:
-                leftover[0] = msg
-        return RedactionReport(ok=not leftover, dst_path=dst_path,
-                               pages_redacted=len(rect_map), leftover_text=leftover)
+            ratio = _unfilled(page, r, fill)
+            if ratio:
+                unfilled.setdefault(0, []).append(ratio)
+        return RedactionReport(ok=not unfilled, dst_path=dst_path,
+                               pages_redacted=len(rect_map), leftover_pixels=unfilled)
     finally:
         out.close()
 
 
 def _verify(dst_path: str, rect_map: dict[int, list[fitz.Rect]],
-            fill: tuple = config.REDACT_FILL_COLOR) -> RedactionReport:
-    """저장본을 다시 열어 (a) 영역 텍스트 0건 (b) 영역이 fill 색 (c) 메타데이터 0 (§4.5).
+            fill: tuple = config.REDACT_FILL_COLOR,
+            removed: dict[str, int] | None = None) -> RedactionReport:
+    """저장본을 다시 열어 (a) 영역 텍스트 0건 (b) 영역이 fill 색 (c) 메타데이터 0 (§4.5)
+    (d) 책갈피·PieceInfo 0건.
 
     (b) 가 없으면 스캔본은 사실상 무검증이다 — 글자층이 없으니 (a) 는 언제나 통과한다.
     """
     doc = fitz.open(dst_path)
     try:
-        leftover: dict[int, str] = {}
+        leftover: dict[int, list[str]] = {}
+        unfilled: dict[int, list[str]] = {}
         for page_no, rects in rect_map.items():
             page = doc[page_no]
             for r in rects:
-                txt = page.get_text("text", clip=r).strip()
+                txt = _leftover_text(page, r)
                 if txt:
-                    leftover[page_no] = leftover.get(page_no, "") + txt
-                px = _fill_leftover(page, r, fill)
-                if px:
-                    leftover[page_no] = leftover.get(page_no, "") + px
+                    leftover.setdefault(page_no, []).append(txt)
+                ratio = _unfilled(page, r, fill)
+                if ratio:
+                    unfilled.setdefault(page_no, []).append(ratio)
         meta_left = {k: v for k, v in (doc.metadata or {}).items()
                      if v and k not in ("format", "encryption")}
         xmp_left = False
@@ -286,10 +394,14 @@ def _verify(dst_path: str, rect_map: dict[int, list[fitz.Rect]],
             xmp_left = bool(xmp and xmp.strip())
         except Exception:
             pass
-        ok = not leftover and not meta_left and not xmp_left
+        traces_left = _leftover_traces(doc)
+        ok = (not leftover and not unfilled and not meta_left and not xmp_left
+              and not traces_left)
         return RedactionReport(ok=ok, dst_path=dst_path,
                                pages_redacted=len(rect_map),
-                               leftover_text=leftover,
-                               metadata_left=meta_left, xmp_left=xmp_left)
+                               leftover_text=leftover, leftover_pixels=unfilled,
+                               metadata_left=meta_left, xmp_left=xmp_left,
+                               traces_left=traces_left,
+                               traces_removed=dict(removed or {}))
     finally:
         doc.close()

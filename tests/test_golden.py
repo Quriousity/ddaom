@@ -198,6 +198,162 @@ class TestRedaction:
         report = redactor.redact(src, {0: [poly]}, dst)
         assert report.ok, report.summary()
 
+    @pytest.mark.parametrize("rotation", [0, 90, 180, 270])
+    def test_rotated_scan_redaction(self, tmp_path, rotation):
+        """회전된 스캔본: 표시 좌표로 고른 자리가 그 자리에서 파괴돼야 한다.
+
+        주석은 회전 전 좌표로 들어가므로 표시 좌표를 그대로 넣으면 엉뚱한 데가
+        파괴된다 (180도면 정확히 반대편). 화면에서 본 대로 지워지는지 픽셀로 본다.
+        """
+        src = str(tmp_path / f"rot{rotation}.pdf")
+        d = fitz.open(os.path.join(SAMPLES, "scan.pdf"))
+        d[0].set_rotation(rotation)
+        d.save(src)
+        d.close()
+
+        # 표시 공간에서 검은 글자가 있는 자리를 찾아 그 자리를 고른다
+        doc = fitz.open(src)
+        page = doc[0]
+        pm = page.get_pixmap(dpi=72, alpha=False)
+        dark = [(x, y) for y in range(pm.height) for x in range(pm.width)
+                if pm.pixel(x, y)[0] < 128]
+        assert dark, "샘플에 검은 픽셀이 없다"
+        xs = [p[0] for p in dark]
+        ys = [p[1] for p in dark]
+        area = fitz.Rect(min(xs), min(ys), max(xs) + 1, max(ys) + 1)
+        doc.close()
+
+        dst = str(tmp_path / f"rot{rotation}_out.pdf")
+        report = redactor.redact(src, {0: [area]}, dst)
+        assert report.ok, report.summary()
+
+        out = fitz.open(dst)
+        pm2 = out[0].get_pixmap(dpi=72, alpha=False)
+        left = sum(1 for y in range(pm2.height) for x in range(pm2.width)
+                   if pm2.pixel(x, y)[0] < 128)
+        out.close()
+        assert left == 0, f"{rotation}도 회전에서 검은 픽셀 {left}개 생존 — 엉뚱한 곳을 파괴했다"
+
+    def test_neighbor_line_not_reported_as_leftover(self, tmp_path):
+        """줄 간격이 촘촘한 표에서 영역을 여유 있게 잡아도 검증이 실패하면 안 된다.
+
+        검증이 파괴보다 엄격하면 (스치기만 한 이웃 줄까지 잔존으로 세면) 제대로
+        지워진 문서가 실패로 뜬다 — 사용자는 지워졌는데 안 지워졌다고 듣는다.
+        """
+        src = str(tmp_path / "dense.pdf")
+        doc = fitz.open()
+        page = doc.new_page(width=595, height=842)
+        for i in range(40):   # 줄 간격 12pt, 글자 9pt
+            page.insert_text((60, 60 + i * 12), f"{i:02d} row 900101-1234567 128,456,895",
+                             fontsize=9)
+        doc.save(src)
+        doc.close()
+
+        d = fitz.open(src)
+        rows = [fitz.Rect(w[:4]) for w in d[0].get_text("words") if "900101" in w[4]]
+        d.close()
+        assert len(rows) == 40
+
+        for pad in (0, 1, 2, 3):
+            dst = str(tmp_path / f"dense_out{pad}.pdf")
+            sels = [r + (-pad, -pad, pad, pad) for r in rows[:9]]
+            report = redactor.redact(src, {0: sels}, dst)
+            assert report.ok, f"{pad}pt 여유에서 오탐: {report.summary()}"
+            # 요청한 9건은 확실히 사라졌다 (여유를 크게 잡으면 이웃까지 지워질 수
+            # 있는데, 넘치게 지우는 건 안전한 방향이라 그대로 둔다)
+            d2 = fitz.open(dst)
+            text = d2[0].get_text()
+            d2.close()
+            for i in range(9):
+                assert f"{i:02d} row 900101" not in text
+            assert text.count("900101") <= 31
+
+    def test_real_leftover_still_caught(self):
+        """오탐을 줄이면서 진짜 잔존을 놓치면 최악이다 — 파괴 안 한 영역은 잡혀야 한다."""
+        src = os.path.join(SAMPLES, "text.pdf")
+        d = fitz.open(src)
+        w = next(w for w in d[0].get_text("words") if "900101" in w[4])
+        d.close()
+        report = redactor._verify(src, {0: [fitz.Rect(w[:4])]})
+        assert not report.ok
+        assert "900101-1234567" in "".join(report.leftover_text[0])
+
+    def test_report_separates_text_and_pixel_reasons(self):
+        """글자 잔존과 픽셀 미충전은 다른 자루에 담긴다 (문구가 서로를 사칭하지 않는다)."""
+        # 글자층 없는 스캔본을 파괴 없이 검증 -> 픽셀만 걸린다
+        src = os.path.join(SAMPLES, "scan.pdf")
+        s = 595 / 1240
+        report = redactor._verify(src, {0: [fitz.Rect(140 * s, 1030 * s, 900 * s, 1100 * s)]})
+        assert not report.ok
+        assert report.leftover_pixels and not report.leftover_text
+        assert "덮이지 않았습니다" in report.summary()
+        assert "글자가 남았습니다" not in report.summary()
+
+    def _traced_pdf(self, path: str) -> None:
+        """책갈피와 /PieceInfo 를 심은 3쪽 문서 — scrub() 도 garbage=4 도 못 걷어내는 것들."""
+        doc = fitz.open()
+        for i in range(3):
+            p = doc.new_page(width=595, height=842)
+            p.insert_text((60, 100 + i * 20), f"page {i} 900101-1234567 public", fontsize=11)
+        doc.set_toc([[1, "1장 급여", 1], [2, "1.1 KIM", 1], [1, "2장 세액", 2], [1, "3장", 3]])
+        doc.save(path)
+        doc.close()
+        doc = fitz.open(path)
+        doc.xref_set_key(doc.pdf_catalog(), "PieceInfo", "<</App<</Private(DOCTRACE)>>>>")
+        for p in doc:
+            doc.xref_set_key(p.xref, "PieceInfo", "<</App<</Private(PAGETRACE)>>>>")
+        doc.save(path, incremental=True, encryption=fitz.PDF_ENCRYPT_KEEP)
+        doc.close()
+
+    def test_bookmarks_and_pieceinfo_removed(self, tmp_path):
+        """책갈피 제목엔 이름이 들어가고 /PieceInfo 엔 편집 흔적이 남는다 — 둘 다 지운다."""
+        src = str(tmp_path / "traced.pdf")
+        dst = str(tmp_path / "traced_out.pdf")
+        self._traced_pdf(src)
+
+        d = fitz.open(src)
+        w = next(x for x in d[0].get_text("words") if "900101" in x[4])
+        before = d[1].get_pixmap(dpi=100, alpha=False).samples   # 손대지 않은 쪽
+        d.close()
+
+        report = redactor.redact(src, {0: [fitz.Rect(w[:4])]}, dst)
+        assert report.ok, report.summary()
+        assert report.traces_removed == {"책갈피": 4, "PieceInfo": 4}
+        assert "함께 제거됨" in report.summary()
+
+        blob = open(dst, "rb").read()
+        for trace in ("1장 급여", "KIM", "DOCTRACE", "PAGETRACE", "900101-1234567"):
+            assert trace.encode() not in blob, f"{trace} 가 파일에 남았다"
+
+        # 부작용 없음: 쪽수·본문·렌더 결과 그대로 (책갈피만 잃는다)
+        d2 = fitz.open(dst)
+        assert d2.page_count == 3
+        assert d2.get_toc() == []
+        assert "public" in d2[0].get_text()
+        assert d2[1].get_pixmap(dpi=100, alpha=False).samples == before
+        d2.close()
+
+    def test_verify_catches_leftover_traces(self, tmp_path):
+        """청소를 건너뛴 파일은 검증이 잡아야 한다 — 조용히 OK 가 나면 안 된다."""
+        src = str(tmp_path / "traced.pdf")
+        self._traced_pdf(src)
+        report = redactor._verify(src, {0: []})
+        assert not report.ok
+        assert report.traces_left == {"책갈피": 4, "PieceInfo": 4}
+        assert "책갈피 잔존: 4개" in report.summary()
+
+    def test_clean_document_reports_nothing_removed(self, tmp_path):
+        """지울 흔적이 없으면 문구도 늘리지 않는다 — 없는 손실을 알릴 이유가 없다."""
+        src = os.path.join(SAMPLES, "text.pdf")
+        dst = str(tmp_path / "clean_out.pdf")
+        d = fitz.open(src)
+        w = next(x for x in d[0].get_text("words") if "900101" in x[4])
+        d.close()
+        report = redactor.redact(src, {0: [fitz.Rect(w[:4])]}, dst)
+        assert report.ok, report.summary()
+        assert report.traces_removed == {}
+        assert "함께 제거됨" not in report.summary()
+
     def test_refuses_overwrite(self):
         src = os.path.join(SAMPLES, "text.pdf")
         with pytest.raises(ValueError):
